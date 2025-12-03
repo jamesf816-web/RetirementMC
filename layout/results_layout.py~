@@ -1,0 +1,266 @@
+# results_layout.py
+from dash import html
+from dash import dcc
+
+def create_results_layout(run, portfolio, setup):
+    # === 1-3. Portfolio by Tax Type ===
+    tax_type_map = {
+        "def457b": "457b Deferred Salary",
+        "taxable": "Taxable Brokerage",
+        "trust": "Trust Accounts",
+        "traditional": "Traditional IRAs",
+        "inherited": "Inherited IRAs",
+        "roth": "Roth IRAs"
+    }
+    fig1 = go.Figure()
+    fig2 = go.Figure()
+    fig3 = go.Figure()
+    colors = px.colors.qualitative.Vivid
+    i = 0
+    
+    for i, (tax, label) in enumerate(tax_type_map.items()):
+        paths = np.zeros((sim.nsims, len(years)))
+        for name, traj in res["account_paths"].items():
+            if inputs.accounts[name]["tax"] == tax:
+                paths += traj
+        if paths.max() == 0:
+                continue
+
+        median = np.median(paths, axis=0)
+        p10 = np.percentile(paths, 10, axis=0)
+        p90 = np.percentile(paths, 90, axis=0)
+
+        fig1.add_trace(go.Scatter(x=years[1:], y=median[1:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=tax))
+        fig2.add_trace(go.Scatter(x=years[1:], y=p10[1:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=tax))
+        fig3.add_trace(go.Scatter(x=years[1:], y=p90[1:], mode='lines', line=dict(width=0), showlegend=True,
+                                   hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=tax))
+ 
+    fig1.update_layout(
+        title="Portfolio Trajectories by Tax Type (median)",
+        xaxis_title="Year", yaxis_title="Balance ($)", template="plotly_white",
+        hovermode="x unified", height=600, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig2.update_layout(
+        title="Portfolio Trajectories by Tax Type (10% CL)",
+        xaxis_title="Year", yaxis_title="Balance ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig3.update_layout(
+        title="Portfolio Trajectories by Tax Type (90% CL)",
+        xaxis_title="Year", yaxis_title="Balance ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+
+    # === 4-6. Income Streams ===
+    fig4 = go.Figure()
+    fig5 = go.Figure()
+    fig6 = go.Figure()
+    colors = px.colors.qualitative.Plotly
+    i = 0
+    for name, traj in [("457b  Deferred Salary", def457b_income), ("Trust Income", trust_income), ("RMDs", rmds), ("Pension", pension), ("SS Benefit", ssbenefit), ("Portfolio Withdrawal", portfolio_withdrawal)]:
+        i += 1
+        median = np.median(traj, axis=0)
+        p10 = np.percentile(traj, 10, axis=0)
+        p90 = np.percentile(traj, 90, axis=0)
+
+        fig4.add_trace(go.Scatter(x=years[2:], y=median[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+        fig5.add_trace(go.Scatter(x=years[2:], y=p10[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+        fig6.add_trace(go.Scatter(x=years[2:], y=p90[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+
+    fig4.update_layout(
+        title="Income Trajectories (median)",
+        xaxis_title="Year", yaxis_title="income ($)", yaxis_range=[0,1_500_000], template="plotly_white",
+        hovermode="x unified", height=600, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig5.update_layout(
+        title="Income Trajectories (10% CL)",
+        xaxis_title="Year", yaxis_title="Income ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig6.update_layout(
+        title="Income Trajectories (90% CL)",
+        xaxis_title="Year", yaxis_title="Income ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+
+
+    # === 7-9. Spending ===
+    fig7 = go.Figure()
+    fig8 = go.Figure()
+    fig9 = go.Figure()
+    colors = px.colors.qualitative.Vivid
+    i = 0
+    median = np.median(plan, axis=0)
+    p10 = np.percentile(plan, 10, axis=0)
+    p90 = np.percentile(plan, 90, axis=0)
+
+    fig7.add_trace(go.Scatter(x=years[2:], y=median[2:], fill=None, mode='lines', line=dict(color=colors[i], width=4), name="5% Spending Plan"))
+    fig8.add_trace(go.Scatter(x=years[2:], y=p10[2:], fill=None, mode='lines', line_color=colors[i], name="5% Spending Plan"))
+    fig9.add_trace(go.Scatter(x=years[2:], y=p90[2:], fill=None, mode='lines', line_color=colors[i], name="5% Spending Plan"))
+
+    for name, traj in [("Base Spending", base_spending), ("Travel", travel), ("Gifting", gifting), ("Taxes", taxes), ("Lumpy Spending", lumpy_spending)]:
+        if traj.max() == 0: continue
+        i += 1
+        median = np.median(traj, axis=0)
+        p10 = np.percentile(traj, 10, axis=0)
+        p90 = np.percentile(traj, 90, axis=0)
+ 
+        fig7.add_trace(go.Scatter(x=years[2:], y=median[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+        fig8.add_trace(go.Scatter(x=years[2:], y=p10[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+        fig9.add_trace(go.Scatter(x=years[2:], y=p90[2:], mode='lines', line=dict(width=0), showlegend=True,
+                                  hoverinfo='skip', stackgroup='one',fillcolor=colors[i],name=name))
+
+    fig7.update_layout(
+        title="Spending Trajectories (median)",
+        xaxis_title="Year", yaxis_title="income ($)", yaxis_range=[0,1500000], template="plotly_white",
+        hovermode="x unified", height=600, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig8.update_layout(
+        title="Spending Trajectories (10% CL)",
+        xaxis_title="Year", yaxis_title="Income ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+    fig9.update_layout(
+        title="Spending Trajectories (90% CL)",
+        xaxis_title="Year", yaxis_title="Income ($)", template="plotly_white",
+        hovermode="x unified", height=400, legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor="rgba(255,255,255,0.8)")
+    )
+
+    # === 10. MAGI ===
+    median_magi = np.median(magi, axis=0)
+    p10_magi = np.percentile(magi, 10, axis=0)
+    p90_magi = np.percentile(magi, 90, axis=0)
+    
+    fig10 = go.Figure()
+    fig10.add_trace(go.Scatter(x=years[2:], y=median_magi[2:], fill=None, mode='lines', line=dict(color="blue", width=4), name='median MAGI'))
+    fig10.add_trace(go.Scatter(x=years[2:], y=p10_magi[2:], fill=None, mode='lines', line_color="red", name='10% CL', showlegend=True))
+    fig10.add_trace(go.Scatter(x=years[2:], y=p90_magi[2:], fill=None, mode='lines', line_color="green", name = '90% CL', showlegend=True))
+
+    fig10.update_layout(
+        title="MAGI", xaxis_title="Year", yaxis=dict(title="Annual MAGI", range=[0, None]),
+        template="plotly_white", hovermode="x unified", height=400
+    )
+ 
+    # === 11. Travel & Gifting ===
+    fig11 = go.Figure()
+    colors = px.colors.qualitative.Vivid
+    i = 1
+    for name, traj in [("Travel", travel), ("Gifting", gifting)]:
+        if traj.max() == 0: continue
+        median = np.median(traj, axis=0)
+        p10 = np.percentile(traj, 10, axis=0)
+        p90 = np.percentile(traj, 90, axis=0)
+        fig11.add_trace(go.Scatter(x=years[2:], y=median[2:], fill=None, mode='lines', line=dict(color=colors[i], width=5), name=f'Median {name}'))
+        fig11.add_trace(go.Scatter(x=years[2:], y=p10[2:], fill=None, mode='lines', line=dict(color=colors[i], width=1), name=f'10% CL {name}', showlegend=True))
+        fig11.add_trace(go.Scatter(x=years[2:], y=p90[2:], fill=None, mode='lines', line=dict(color=colors[i], width=1), name=f'90% CL {name}', showlegend=True))
+        i += 1
+
+    fig11.update_layout(
+        title="Travel & Gifting", xaxis_title="Year", yaxis_title="Annual Spending ($)",
+        template="plotly_white", hovermode="x unified", height=400)
+    
+    # === 12. ROTH conversions ===
+    fig12 = go.Figure()
+    for name, traj in [("ROTH Convesions", conversion)]:
+        if traj.max() == 0: continue
+        median = np.median(traj, axis=0)
+        p10 = np.percentile(traj, 10, axis=0)
+        p90 = np.percentile(traj, 90, axis=0)
+        fig12.add_trace(go.Scatter(x=years[2:], y=median[2:], fill=None, mode='lines', line=dict(color="blue", width=4), name=f'Median {name}'))
+        fig12.add_trace(go.Scatter(x=years[2:], y=p10[2:], fill=None, mode='lines', line=dict(color="red", width=2), name=f'10% CL {name}', showlegend=True))
+        fig12.add_trace(go.Scatter(x=years[2:], y=p90[2:], fill=None, mode='lines', line=dict(color="green", width=2), name=f'90% CL {name}', showlegend=True))
+ 
+    fig12.update_layout(
+        title="ROTH Conversions", xaxis_title="Year", yaxis_title="Annual Spending ($)",
+        template="plotly_white", hovermode="x unified", height=400)
+    
+     # === 13. Medicare Costs ===
+    median_med = np.median(medicare, axis=0)
+    p10_med = np.percentile(medicare, 10, axis=0)
+    p90_med = np.percentile(medicare, 90, axis=0)
+    
+    fig13 = go.Figure()
+    fig13.add_trace(go.Scatter(x=years[2:], y=median_med[2:], fill=None, mode='lines', line=dict(color="blue", width=4), name=f'median {name}'))
+    fig13.add_trace(go.Scatter(x=years[2:], y=p10_med[2:], fill=None, mode='lines', line_color="red", name=f'10% CL {name}', showlegend=True))
+    fig13.add_trace(go.Scatter(x=years[2:], y=p90_med[2:], fill=None, mode='lines', line_color="green", name=f'90% CL {name}', showlegend=True))
+
+    fig13.update_layout(
+        title="Medicare Costs", xaxis_title="Year", yaxis=dict(title="AnnualMedicare Costs", range=[0, None]),
+        template="plotly_white", hovermode="x unified", height=400
+    )
+ 
+   # --- Build Results Layout ---
+    results_layout = html.Div([
+        html.Div([
+            html.H2(f"Success Rate: {success_rate:.2f}%    Avoid Ruin: {avoid_ruin_rate:.2f}%",
+                    style={'fontSize': 30, 'color': vanguard_color(success_rate), 'textAlign': 'center'}),
+
+             html.P([
+                f"{inputs.nsims:,} simulations • {elapsed:.1f}s",
+                html.Br(),
+            ], style={'textAlign': 'center', 'color': '#7f8c8d', 'whiteSpace': 'pre-wrap'})
+        ], style={'margin': '30px 0'}),
+
+        # Group Median Results
+        html.Div([dcc.Graph(figure=fig1)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig4)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig7)], style={'margin': '40px 0'}),
+
+        # MAGI, Travel/Gifting, ROTH Conversions, Medicare Costs
+        html.Div([dcc.Graph(figure=fig10)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig11)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig12)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig13)], style={'margin': '40px 0'}),
+
+        # Group 10% CL Results
+        html.Div([dcc.Graph(figure=fig2)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig5)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig8)], style={'margin': '40px 0'}),
+        
+        # Group 90% CL Results
+        html.Div([dcc.Graph(figure=fig3)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig6)], style={'margin': '40px 0'}),
+        html.Div([dcc.Graph(figure=fig9)], style={'margin': '40px 0'}),
+                
+    ], style={'maxWidth': '1400px', 'margin': '0 auto'})
+
+    # Return results into main UI + debug-output text separately
+    debug_log = sim.debug_log
+    return results_layout, "\n".join(debug_log)
+
+
+def vanguard_color(success_rate):
+    """
+    Returns a color in the Vanguard-style green-to-red gradient.
+    success_rate: 0 to 100
+    """
+    # Clamp success_rate between 0 and 100
+    sr = max(0, min(100, success_rate))
+
+    # Green to yellow to red gradient
+    if sr >= 75:
+        # Green gradient (high success)
+        r = int(255 * (1 - (sr - 75)/25))  # decrease red
+        g = 200
+        b = 0
+    elif sr >= 50:
+        # Yellow gradient (medium success)
+        r = 255
+        g = int(200 * ((sr - 50)/25 + 0.5))  # ramp green
+        b = 0
+    else:
+        # Red gradient (low success)
+        r = 255
+        g = int(200 * (sr/50))  # ramp green
+        b = 0
+
+    return f'rgb({r},{g},{b})'
+
+

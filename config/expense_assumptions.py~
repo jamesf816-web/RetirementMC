@@ -1,0 +1,29 @@
+# config/expense_assumptions.py
+# These are **reasonable defaults** — user can override in GUI
+
+# Healthcare (generated in code, but defaults here for clarity)
+medicare_start_age = 65
+medicare_part_b_base_2026 = 185.00 * 12      # will be inflation-adjusted
+medicare_supplement_annual = 4_800
+irmaa_brackets_start_year = 2026
+
+# Housing
+mortgage_payoff_year = 2031
+mortgage_monthly_until_payoff = 3_625 * 12
+property_tax_and_insurance_annual = 8_000
+
+# Transportation
+car_replacement_cycle_years = 8
+car_cost_today = 55_000
+car_inflation_rate = 0.04
+
+# Home Maintenance (lumpy)
+home_repair_probability_annual = 0.12
+home_repair_mean_cost = 28_000
+home_repair_shape = 2.0   # lognormal shape
+
+# One-time or irregular (user can add more in GUI later)
+lumpy_expenses = [
+    # {"year": 2030, "description": "New roof", "amount": 35_000},
+    # {"year": 2035, "description": "HVAC replacement", "amount": 18_000},
+]

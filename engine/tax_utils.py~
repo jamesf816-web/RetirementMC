@@ -1,0 +1,68 @@
+# engine/tax_utils.py
+import numpy as np
+from typing import List, Tuple
+
+# -----------------------------------------------------------------------------
+# Base Federal Brackets (2026)
+# -----------------------------------------------------------------------------
+BASE_BRACKETS_FED: List[Tuple[float, float, float]] = [
+    (0,      24_800, 0.10),
+    (24_800, 100_800, 0.12),
+    (100_800, 211_400, 0.22),
+    (211_400, 403_550, 0.24),
+    (403_550, 512_450, 0.32),
+    (512_450, 768_700, 0.35),
+    (768_700, np.inf, 0.37),
+]
+
+# Base IRMAA thresholds for MFJ (2026)
+IRMAA_THRESHOLDS_MFJ = [218_000, 274_000, 342_000, 410_000, 750_000]
+
+# -----------------------------------------------------------------------------
+# Functions
+# -----------------------------------------------------------------------------
+def get_current_brackets(year: int, inflation_index: float = None) -> Tuple[List[float], List[float]]:
+    """
+    Return inflation-adjusted current year federal tax bracket upper limits and IRMAA thresholds.
+    
+    Returns:
+        Tuple[brackets, thresholds]
+    """
+    # 1. Determine inflation factor (passed here as inflation_index)
+    inflation_factor = inflation_index
+    if year < 2026: # ensure we do not apply inflation befoee start year
+        inflation_factor = 1.0
+
+    # 2. Inflate tax bracket bounds
+        
+    for low, high, rate in BASE_BRACKETS_FED:
+        # Calculate inflated bounds
+        inflated_low = low * inflation_factor
+        inflated_high = high * inflation_factor
+        
+    # 3. Inflate thresholds
+    thresholds = [t * inflation_factor for t in IRMAA_THRESHOLDS_MFJ]
+
+    # Return the bracket limit and thresholds lists
+    return brackets, thresholds
+
+def get_tax_rate(magi: float, year: int, inflation_index: float = None) -> float:
+    """
+    Return marginal ordinary income tax rate for given MAGI and year
+    """
+    brackets, _ = get_current_brackets(year, inflation_index)
+    for low, high, rate in brackets:
+        if low <= magi < high:
+            return rate
+    return brackets[-1][2]
+
+
+def get_irmaa_tier(magi_two_years_prior: float, year: int, inflation_index: float = None) -> int:
+    """
+    Return IRMAA tier (0-5) based on prior MAGI and year
+    """
+    _, thresholds = get_current_brackets(year, inflation_index)
+    for tier, thresh in enumerate(thresholds):
+        if magi_two_years_prior < thresh:
+            return tier
+    return len(thresholds)

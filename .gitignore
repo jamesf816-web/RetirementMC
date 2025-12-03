@@ -1,0 +1,16 @@
+# macOS / iCloud garbage
+.DS_Store
+._*
+.Spotlight-V100
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+.Trashes
+Icon?
+*.icloud
+
+# General
+__pycache__/
+*.pyc
+venv/
+.env

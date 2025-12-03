@@ -1,0 +1,53 @@
+# models.py   ← NEW FILE
+from dataclasses import dataclass
+from typing import Any, Dict
+
+@dataclass
+class PlannerInputs:
+    # Core
+    current_year: int
+    end_age: int
+    filing_status: str
+
+    # Person 1
+    person1_birth_year: int
+    person1_birth_month: int
+    person1_ret_age_years: int
+    person1_ret_age_months: int
+    person1_ss_age_years: int
+    person1_ss_age_months: int
+    person1_pension_age_years: int
+    person1_pension_age_months: int
+    person1_salary_amount: float
+    person1_ss_benefit: float
+    person1_pension_amount: float
+
+    # Person 2
+    person2_birth_year: int
+    person2_birth_month: int
+    person2_ret_age_years: int
+    person2_ret_age_months: int
+    person2_ss_age_years: int
+    person2_ss_age_months: int
+    person2_pension_age_years: int
+    person2_pension_age_months: int
+    person2_salary_amount: float
+    person2_ss_benefit: float
+    person2_pension_amount: float
+
+    # Portfolio & strategy
+    accounts: Dict[str, Any]
+    nsims: int
+    tax_strategy: str
+    irmaa_strategy: str
+    max_roth: float
+    base_annual_spending: float
+    withdrawal_rate: float
+    travel: float
+    gifting: float
+    magi_1: float
+    magi_2: float
+    ss_fail_year: int
+    ss_fail_percent: float
+
+    return_trajectories: bool = True

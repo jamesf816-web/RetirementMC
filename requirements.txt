@@ -1,0 +1,13 @@
+cmake
+dash
+plotly
+numpy
+pandas
+scipy
+gunicorn
+yfinance
+openpyxl
+kaleido
+dash-ag-grid
+pyarrow
+streamline
