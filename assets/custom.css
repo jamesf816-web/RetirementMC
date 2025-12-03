@@ -1,2 +1,15 @@
-body { background: #f8f9fa; }
+/* assets/custom.css – exactly the look you loved */
+body { font-family: 'Segoe UI', 'Helvetica Neue', sans-serif; background: #f8f9fa; }
+.text-primary { color: #2c5aa0 !important; }
+.bg-light { background: #f8f9fa !important; }
+.min-width-100 { min-width: 100px; }
+
+/* Slider styling – matches your old look */
+.rc-slider { height: 8px; }
+.rc-slider-track { background-color: #2c5aa0; }
+.rc-slider-handle { border-color: #2c5aa0; width: 20px; height: 20px; margin-top: -6px; }
+
+/* Button */
+.btn-primary { background-color: #2c5aa0; border: none; }
+.btn-primary:hover { background-color: #1e3f73; }body { background: #f8f9fa; }
 h1, h3 { color: #2c3e50; }

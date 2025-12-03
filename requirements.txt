@@ -1,3 +1,4 @@
+
 cmake
 dash
 plotly
@@ -11,3 +12,7 @@ kaleido
 dash-ag-grid
 pyarrow
 streamline
+dash-bootstrap-components
+dash-core-components
+dash-html-components
+dash-ag-grid

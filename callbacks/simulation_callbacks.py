@@ -70,3 +70,9 @@ def register_simulation_callbacks(app, get_planner_inputs):
 
         return results_layout, debug_text
 
+    @app.callback(
+        Output("nsims-value", "children"),
+        Input("nsims-slider", "value")
+    )
+    def update_nsims_display(n):
+        return f"{n:,}"

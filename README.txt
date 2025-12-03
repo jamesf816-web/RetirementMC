@@ -1,5 +1,3 @@
-Step 11: Install & Run
-Still in ~/retirement_calculator:
 
 python3 -m venv venv
 source venv/bin/activate
