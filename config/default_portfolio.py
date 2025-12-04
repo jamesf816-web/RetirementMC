@@ -7,7 +7,8 @@ import numpy as np
 # Simulation starts in Year 2 for MAGI 2-year look back
 # Data files include Year 0 and Year 1
 # Accounts should be populated with Year 1 ending balances (e.g. needed to determine RMDs for first year of simulation)
-accounts = {
+
+default_accounts = {
     "GST_Exempt":     {"balance": 3_132_760, "equity": 0.75, "bond": 0.25, "tax": "trust",      "owner": "person1", "mandatory_yield": 0.015},
     "REF_Irrev":      {"balance": 1_806_065, "equity": 0.75, "bond": 0.25, "tax": "trust",      "owner": "person1", "mandatory_yield": 0.015},
     "Deferred457b":   {"balance":    29_299, "equity": 0.25, "bond": 0.75, "tax": "def457b",    "owner": "person1", "start_age": 60, "drawdown_years": 5},

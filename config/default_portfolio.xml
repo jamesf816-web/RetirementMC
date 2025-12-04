@@ -1,0 +1,28 @@
+<portfolio>
+    <account name="GST_Exempt">
+        <balance>3132760</balance>
+        <equity>0.75</equity>
+        <bond>0.25</bond>
+        <tax>trust</tax>
+        <owner>person1</owner>
+        <mandatory_yield>0.015</mandatory_yield>
+    </account>
+    <account name="REF_Irrev">
+        <balance>1806065</balance>
+        <equity>0.75</equity>
+        <bond>0.25</bond>
+        <tax>trust</tax>
+        <owner>person1</owner>
+        <mandatory_yield>0.015</mandatory_yield>
+    </account>
+    <account name="Deferred457b">
+        <balance>29299</balance>
+        <equity>0.25</equity>
+        <bond>0.75</bond>
+        <tax>def457b</tax>
+        <owner>person1</owner>
+        <start_age>60</start_age>
+        <drawdown_years>5</drawdown_years>
+    </account>
+    <!-- Add all other accounts here in the same structure -->
+</portfolio>

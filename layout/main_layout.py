@@ -1,3 +1,4 @@
+#main_layout.py
 import dash
 from dash import Dash
 from dash import dcc
@@ -5,7 +6,8 @@ from dash import html
 import dash_ag_grid as dag
 import plotly.graph_objects as go
 
-from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
+from config.default_setup import default_setup as DEFAULT_SETUP
+from config.default_portfolio import default_accounts as DEFAULT_ACCOUNTS
 
 # ----------------------------------------------------------------------
 # Application Layout Definition
@@ -22,8 +24,9 @@ main_layout = html.Div(
         ),
         
  
-        # add store for default portfolio inputs
+        # add stores for default portfolio inputs and setup inputs
         dcc.Store(id='portfolio-store', data=DEFAULT_ACCOUNTS),
+        dcc.Store(id='setup-store', data=DEFAULT_SETUP),
 
         # ----------------------------------------------------------------------
         # ROW 1: Simulation Controls - Portfolio Editor, Slider and Run Button

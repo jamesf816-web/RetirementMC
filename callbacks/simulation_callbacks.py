@@ -1,8 +1,9 @@
 # callbacks/simulation_callbacks.py
 from dash import Input, Output, State, callback, no_update
+from dash import html
 import plotly.graph_objects as go
-import html
 import time
+import traceback
 from utils.input_adapter import get_planner_inputs        # We'll create this next
 from engine.simulator import RetirementSimulator
 
@@ -28,11 +29,10 @@ def register_simulation_callbacks(app):
         try:
             # Build inputs from current UI
             inputs = get_planner_inputs(
-                num_simulations=n_sims or 1000,
-                base_annual_spending=base_spending or 140000,
-                withdrawal_rate=withdrawal_rate or 0.05,
-                portfolio_data=portfolio_rows or [],
-                # Add more fields later (tax_strategy, etc.)
+                num_simulations=n_sims,
+                base_annual_spending=base_spending,
+                withdrawal_rate=withdrawal_rate,
+                portfolio_data=portfolio_rows
             )
 
             sim = RetirementSimulator(inputs)
@@ -46,13 +46,17 @@ def register_simulation_callbacks(app):
             for path in paths[:500]:  # limit for speed
                 fig_paths.add_trace(go.Scatter(y=path, line=dict(width=1, color="rgba(100,150,255,0.15)"), showlegend=False))
             if paths:
-                median_path = [sorted(year)[len(year)//2] for year in zip(*paths)]
+                median_path = []
+                for year in zip(*paths):
+                    sorted_year = sorted(year)
+                    median_path.append(sorted_year[len(sorted_year)//2])
+                #median_path = [sorted(year)[len(year)//2] for year in zip(*paths)]
                 fig_paths.add_trace(go.Scatter(y=median_path, line=dict(width=3, color="navy"), name="Median"))
-            fig_paths.update_layout(
-                title=f"Portfolio Balance Paths ({n_sims:,} simulations)",
-                xaxis_title="Year", yaxis_title="Value ($)",
-                template="simple_white", height=520
-            )
+                fig_paths.update_layout(
+                    title=f"Portfolio Balance Paths ({getattr(inputs, 'num_simulations', 100):,} simulations)",
+                    xaxis_title="Year", yaxis_title="Value ($)",
+                    template="simple_white", height=520
+                )
 
             # Histogram
             ending = results.get("ending_balances", [])
@@ -66,23 +70,33 @@ def register_simulation_callbacks(app):
             # Metrics
             success = results.get("success_rate", 0)
             avoid_ruin = results.get("avoid_ruin_rate", 0)
+            sim_count = getattr(inputs, "num_simulations", 1000)  # use attribute access for dataclass
+
             metrics = html.Div([
                 html.H4("Simulation Results", style={"textAlign": "center"}),
                 html.Table([
                     html.Tr([html.Td("Success Rate"), html.Td(f"{success:.1%}", style={"fontWeight": "bold", "color": "green" if success > 0.9 else "red"})]),
                     html.Tr([html.Td("Avoid Ruin Rate"), html.Td(f"{avoid_ruin:.1%}")]),
-                    html.Tr([html.Td("Simulations"), html.Td(f"{n_sims:,}")]),
+                    html.Tr([html.Td("Simulations"), html.Td(f"{sim_count:,}")]),
                     html.Tr([html.Td("Runtime"), html.Td(f"{elapsed:.2f}s")]),
                 ], style={"margin": "auto", "fontSize": "16px"})
             ])
 
-            debug = f"Simulation completed in {elapsed:.2f}s\n" \
-                    f"Success: {success:.1%} | Avoid Ruin: {avoid_ruin:.1%}\n" \
-                    f"Portfolio rows: {len(portfolio_rows)}\n" \
-                    f"Debug log:\n" + "\n".join(getattr(sim, "debug_log", []))
+
+            debug = (
+                f"Simulation completed in {elapsed:.2f}s\n"
+                f"Success: {success:.1%} | Avoid Ruin: {avoid_ruin:.1%}\n"
+                f"Portfolio rows: {len(portfolio_rows) if portfolio_rows else 0}\n"
+                "Debug log:\n" + "\n".join(getattr(sim, "debug_log", []))
+            )
+
 
             return fig_paths, fig_hist, metrics, debug
 
         except Exception as e:
-            error = f"Simulation failed: {str(e)}"
-            return go.Figure(), go.Figure(), html.Div(error, style={"color": "red"}), error
+            tb = traceback.format_exc()  # full traceback as string
+            print(tb)  # also logs to console
+            error_msg = f"Simulation failed: {str(e)}\nFull traceback:\n{tb}"
+            return go.Figure(), go.Figure(), html.Div(error_msg, style={"color": "red"}), error_msg
+
+        

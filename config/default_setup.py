@@ -28,7 +28,7 @@ default_setup = [
     {"parameter": "person2_ss_fra", "value": 774.75},
     {"parameter": "person2_pension_amount", "value": 0},
 
-    {"parameter": "nsims", "value": 1000},
+    {"parameter": "nsims", "value": 100},
     {"parameter": "tax_strategy", "value": "fill_24_percent"},
     {"parameter": "irmaa_strategy", "value": "fill_IRMAA_3"},
     {"parameter": "max_roth", "value": 240000},

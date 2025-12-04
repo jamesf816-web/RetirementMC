@@ -9,15 +9,17 @@ import dash_ag_grid as dag
 # Core Imports
 # Assuming DEFAULT_ACCOUNTS and main_layout are exported as variables
 # -----------------------------------------------------------
-from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
+#from config.default_portfolio import default_accounts as DEFAULT_ACCOUNTS
+#from config.default_setup import default_setup as DEFAULT_SETUP
+#from models import PlannerInputs
+
 from layout.main_layout import main_layout
-from models import PlannerInputs
 from utils.input_adapter import get_planner_inputs
 
 # Import callback modules
-import callbacks.editor_callbacks as editor_callbacks
-import callbacks.simulation_callbacks as simulation_callbacks
-import callbacks.results_callbacks as results_callbacks
+#import callbacks.editor_callbacks as editor_callbacks
+#import callbacks.simulation_callbacks as simulation_callbacks
+#import callbacks.results_callbacks as results_callbacks
 
 
 # Initialize app

@@ -1,0 +1,36 @@
+<setup>
+    <current_year>2025</current_year>
+    <end_age>100</end_age>
+    <filing_status>mjf</filing_status>
+    <magi_1>411200</magi_1>
+    <magi_2>366069</magi_2>
+
+    <person1>
+        <birth_year>1965</birth_year>
+        <birth_month>8</birth_month>
+        <ret_age_years>59</ret_age_years>
+        <ret_age_months>6</ret_age_months>
+        <ss_age_years>70</ss_age_years>
+        <ss_age_months>0</ss_age_months>
+        <pension_age_years>65</pension_age_years>
+        <pension_age_months>0</pension_age_months>
+        <salary_amount>0</salary_amount>
+        <ss_fra>4105.99</ss_fra>
+        <pension_amount>2653.83</pension_amount>
+    </person1>
+
+    <person2>
+        <birth_year>1959</birth_year>
+        <birth_month>8</birth_month>
+        <ret_age_years>60</ret_age_years>
+        <ret_age_months>0</ret_age_months>
+        <ss_age_years>66</ss_age_years>
+        <ss_age_months>10</ss_age_months>
+        <pension_age_years>65</pension_age_years>
+        <pension_age_months>0</pension_age_months>
+        <salary_amount>0</salary_amount>
+        <ss_fra>774.75</ss_fra>
+        <pension_amount>0</pension_amount>
+    </person2>
+
+</setup>
