@@ -86,3 +86,4 @@ def register_simulation_callbacks(app):
         except Exception as e:
             error = f"Simulation failed: {str(e)}"
             return go.Figure(), go.Figure(), html.Div(error, style={"color": "red"}), error
+        

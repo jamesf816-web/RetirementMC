@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 
-def register_callbacks(app, sim, inputs, res, data_dict):
+def register_results_callbacks(app, sim, inputs, res, data_dict):
     """
     data_dict contains precomputed arrays needed for plots:
     - years, account_paths, income trajectories, spending plans, MAGI, medicare, conversions, etc.

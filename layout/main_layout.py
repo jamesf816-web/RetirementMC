@@ -1,10 +1,9 @@
 import dash
 from dash import Dash
 from dash import dcc
-import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import html
 import dash_ag_grid as dag
+import plotly.graph_objects as go
 
 from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
 
@@ -22,95 +21,7 @@ main_layout = html.Div(
             style={'textAlign': 'center', 'color': 'black', 'marginBottom': 0}
         ),
         
-        # At the top of children=[], right after html.H1(...)
-        html.Div(
-            id="first-run-setup",
-            children=[
-                html.Div(
-                    [
-                        html.H2("Welcome to Retirement Monte Carlo Explorer", style={'textAlign': 'center', 'marginBottom': 30}),
-                        html.P("Please enter your basic information to begin. This only appears once.", 
-                               style={'textAlign': 'center', 'color': '#666', 'fontSize': 18, 'marginBottom': 40}),
-
-                        html.Div([
-                            html.Label("Current Year", style={'fontWeight': 'bold'}),
-                            dcc.Input(id="current_year", type="number", value=2026, style={'textAlign': 'center', 'fontSize': '16px'})
-                        ], style={'fontSize': 16, 'marginBottom': 15}),
-
-                        html.Div([
-                            html.Label("Your Birth Year (Person 1)", style={'fontWeight': 'bold'}),
-                            dcc.Input(id="birth_year_person1", type="number", value=1965, min=1925, max=2100, style={'textAlign': 'center', 'fontSize': '16px'})
-                        ], style={'fontSize': 16, 'marginBottom': 15}),
-
-                        html.Div([
-                            html.Label("Partner Birth Year (Person 2)", style={'fontWeight': 'bold'}),
-                            dcc.Input(id="birth_year_person2", type="number", value=1959, min=1925, max=2100, style={'textAlign': 'center', 'fontSize': '16px'})
-                        ], style={'fontSize': 16, 'marginBottom': 15}),
-                        
-                        html.Div([
-                            html.Label("Desired Retirement Age", style={'fontWeight': 'bold'}),
-                            dcc.Input(id="retirement_age", type="number", value=60, min=50, max=80, style={'textAlign': 'center', 'fontSize': '16px'})
-                        ], style={'fontSize': 16, 'marginBottom': 15}),
-                        
-                        html.Div([
-                            html.Label("Plan Until Age", style={'fontWeight': 'bold'}),
-                            dcc.Input(id="end_age", type="number", value=100, min=90, max=110, style={'textAlign': 'center', 'fontSize': '16px'})
-                        ], style={'fontSize': 16, 'marginBottom': 15}),
-
-                        html.Div([html.Label("Tax Filing Status", style={'fontWeight': 'bold'}),
-                           dcc.Dropdown(
-                               id="filing_status",
-                               options=[
-                                   {'label': 'Married Filing Jointly', 'value': 'mfj'},
-                                   {'label': 'Single', 'value': 'single'},
-                                   {'label': 'Head of Household', 'value': 'hoh'},
-                                   {'label': 'Married Filing Separately', 'value': 'mfs'},
-                               ],
-                               value='mfj',
-                               clearable=False,
-                               style={'fontSize': 18}
-                           )],
-                           style={'marginBottom': 30}),
-                        
-                          html.Button(
-                            "Start Planning →",
-                            id="start",
-                            n_clicks=0,
-                            style={
-                                'width': '100%',
-                                'padding': '15px',
-                                'fontSize': 20,
-                                'backgroundColor': '#27ae60',
-                                'color': 'white',
-                                'border': 'none',
-                                'borderRadius': '8px',
-                                'cursor': 'pointer'
-                            }
-                        )
-                    ],
-                    style={
-                        'width': '500px',
-                        'margin': '80px auto',
-                        'padding': '40px',
-                        'backgroundColor': 'white',
-                        'borderRadius': '12px',
-                        'boxShadow': '0 10px 30px rgba(0,0,0,0.2)',
-                        'textAlign': 'left'
-                    }
-                )
-            ],
-            style={
-                'position': 'fixed',
-                'top': 0, 'left': 0, 'right': 0, 'bottom': 0,
-                'backgroundColor': 'rgba(0,0,0,0.8)',
-                'display': 'flex',
-                'alignItems': 'center',
-                'justifyContent': 'center',
-                'zIndex': 9999
-            }
-        ),
-
-
+ 
         # add store for default portfolio inputs
         dcc.Store(id='portfolio-store', data=DEFAULT_ACCOUNTS),
 
@@ -137,7 +48,7 @@ main_layout = html.Div(
                     'whiteSpace': 'nowrap',
                     'height': '50px',
                     'alignSelf': 'flex-end',
-                    'marginRighth': '20px'
+                    'marginRight': '20px'
                 }
             ),
 
@@ -170,7 +81,7 @@ main_layout = html.Div(
                         'marginBottom': '2px'
                     }
                 ),
-            ], style={'Width': '160px'})
+            ], style={'width': '160px', 'flex': 'none'})
 
         ], style={
             'display': 'flex', 
@@ -219,16 +130,18 @@ main_layout = html.Div(
                              "editable": True},
                             {"field": "mandatory_yield", "headerName": "Mand. Yield", "editable": True, "width": 110},
                             {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
-                            {
-                                "headerName": "Delete",
-                                "cellRenderer": "btnCellRenderer",
-                                "cellRendererParams": {"clickedField": "delete"},
-                                "width": 90,
-                                "pinned": "right",
-                                "sortable": False,
-                                "filter": False
-                            },
-                        ],
+                     {
+                        "Headername": "Delete",
+                        "field": "delete",
+                        "checkboxSelection": True,
+                        "width": 90,
+                        "pinned": "right",
+                        "sortable": False,
+                        "filter": False,
+                        "headerCheckboxSelection": True,
+                        "headerCheckboxSelectionFilteredOnly": True,
+                    },
+                ],
                         rowData=[{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()],
                         defaultColDef={
                             "flex": 1,
@@ -335,12 +248,53 @@ main_layout = html.Div(
             'boxSizing': 'border-box'
         }), # closes row 2
 
+        # ----------------------------------------------------------------------
+        # RESULTS SECTION – replace your current html.Div(id='results') + debug with this
+        # ----------------------------------------------------------------------
         # === RESULTS ===
-        html.Div(id='results'),
+        html.Div(id="results", children=[
+            html.H2("Simulation Results", style={"marginTop": "40px", "textAlign": "center"}),
+
+            html.Div([
+                html.Div([
+                    dcc.Graph(
+                        id="balance-paths-graph",
+                        figure=go.Figure().update_layout(
+                            title="Balance Paths (click Run to generate)",
+                            template="simple_white"
+                        )
+                    ),
+                ], style={"width": "65%", "display": "inline-block"}),
+
+                html.Div([
+                    dcc.Graph(
+                        id="ending-balance-hist",
+                        figure=go.Figure().update_layout(
+                            title="Ending Balance Distribution",
+                            template="simple_white"
+                        )
+                    ),
+                ], style={"width": "34%", "display": "inline-block", "paddingLeft": "20px"}),
+            ]),
+
+            html.Div(
+                id="metrics-table",
+                children=html.P("Click 'Run Simulation' to see results", style={"color": "#888", "fontStyle": "italic"}),
+                style={"marginTop": "30px", "textAlign": "center"}
+            ),
+        ]),
 
         html.Div(
             id="debug-output",
-            style={"whiteSpace": "pre-wrap", "color": "gray", "fontSize": 12, "marginTop": 20
-        })
+            style={
+                "whiteSpace": "pre-wrap",
+                "backgroundColor": "#f4f4f4",
+                "padding": "15px",
+                "borderRadius": "6px",
+                "fontSize": 12,
+                "color": "#555",
+                "marginTop": 40
+            }
+        ),
     ] 
 )

@@ -10,7 +10,9 @@ import dash_ag_grid as dag
 # Assuming DEFAULT_ACCOUNTS and main_layout are exported as variables
 # -----------------------------------------------------------
 from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
-from layout.main_layout import main_layout # <-- FIX 1: Import the variable 'main_layout'
+from layout.main_layout import main_layout
+from models import PlannerInputs
+from utils.input_adapter import get_planner_inputs
 
 # Import callback modules
 import callbacks.editor_callbacks as editor_callbacks
@@ -29,12 +31,8 @@ server = app.server
 # Assign layout (using the imported variable)
 app.layout = main_layout
 
-# FIX 2: Explicitly call the registration function in each callback module
-# You must ensure each of these modules defines a function called register_callbacks(app)
-editor_callbacks.register_callbacks(app)
-simulation_callbacks.register_callbacks(app)
-results_callbacks.register_callbacks(app)
-
+from callbacks.simulation_callbacks import register_simulation_callbacks
+register_simulation_callbacks(app)
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8050)
