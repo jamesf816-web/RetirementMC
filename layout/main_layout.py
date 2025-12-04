@@ -1,4 +1,4 @@
-#main_layout.py
+# main_layout.py
 import dash
 from dash import Dash
 from dash import dcc
@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 
 from config.default_setup import default_setup as DEFAULT_SETUP
 from config.default_portfolio import default_accounts as DEFAULT_ACCOUNTS
+
+from layout.results_layout import create_results_layout
 
 # ----------------------------------------------------------------------
 # Application Layout Definition
@@ -252,52 +254,22 @@ main_layout = html.Div(
         }), # closes row 2
 
         # ----------------------------------------------------------------------
-        # RESULTS SECTION – replace your current html.Div(id='results') + debug with this
+        # RESULTS SECTION
         # ----------------------------------------------------------------------
-        # === RESULTS ===
+        
+        html.Div(id="rate-header-div"),
+
+        # The detailed plots section
         html.Div(id="results", children=[
-            html.H2("Simulation Results", style={"marginTop": "40px", "textAlign": "center"}),
-
-            html.Div([
-                html.Div([
-                    dcc.Graph(
-                        id="balance-paths-graph",
-                        figure=go.Figure().update_layout(
-                            title="Balance Paths (click Run to generate)",
-                            template="simple_white"
-                        )
-                    ),
-                ], style={"width": "65%", "display": "inline-block"}),
-
-                html.Div([
-                    dcc.Graph(
-                        id="ending-balance-hist",
-                        figure=go.Figure().update_layout(
-                            title="Ending Balance Distribution",
-                            template="simple_white"
-                        )
-                    ),
-                ], style={"width": "34%", "display": "inline-block", "paddingLeft": "20px"}),
-            ]),
-
-            html.Div(
-                id="metrics-table",
-                children=html.P("Click 'Run Simulation' to see results", style={"color": "#888", "fontStyle": "italic"}),
-                style={"marginTop": "30px", "textAlign": "center"}
-            ),
+            # This calls create_results_layout(), which defines all 15 dcc.Graph IDs
+            create_results_layout(),
         ]),
 
+        # The detailed metrics table remains separate below the plots
         html.Div(
-            id="debug-output",
-            style={
-                "whiteSpace": "pre-wrap",
-                "backgroundColor": "#f4f4f4",
-                "padding": "15px",
-                "borderRadius": "6px",
-                "fontSize": 12,
-                "color": "#555",
-                "marginTop": 40
-            }
-        ),
+            id="metrics-table",
+            children=html.P("Click 'Run Simulation' to see results", style={"color": "#888", "fontStyle": "italic"}),
+            style={"marginTop": "30px", "textAlign": "center"}
+        ),        html.H2("Simulation Results", style={"marginTop": "40px", "textAlign": "center"}),    
     ] 
 )

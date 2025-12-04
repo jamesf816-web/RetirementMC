@@ -46,7 +46,7 @@ def register_simulation_callbacks(app):
 
         try:
             # Build inputs from current UI
-            inputs = get_planner_inputs(
+             inputs = get_planner_inputs(
                 num_simulations=n_sims,
                 base_annual_spending=base_spending,
                 withdrawal_rate=withdrawal_rate,
@@ -85,7 +85,7 @@ def register_simulation_callbacks(app):
             )
             
             # The return must match the order of *FIGURE_OUTPUTS, then the two metrics
-            return rate_header, *figure_list, metrics_table, debug_output
+            return rate_header *figure_list, metrics_table, debug_output
 
         except Exception as e:
             tb = traceback.format_exc()

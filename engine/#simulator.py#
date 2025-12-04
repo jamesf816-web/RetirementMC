@@ -224,7 +224,7 @@ class RetirementSimulator:
         account_names = list(self.accounts.keys())
 
         n_full = n_years_sim + 2 # need two years prior MAGI for IRMAA
-        n_sims = int(self.nsims)
+        n_sims = self.nsims
         self.portfolio_paths = np.zeros((n_sims, n_full))
         self.account_paths = {name: np.zeros((n_sims, n_full)) for name in account_names}
         self.magi_paths = np.zeros((n_sims, n_full)) #need to start MAGI 2 years early
@@ -1056,9 +1056,9 @@ class RetirementSimulator:
         # 7. Stats
         threshold = 500_000
         portfolio_end = self.portfolio_paths[:, -1]
-        success_rate = np.mean(portfolio_end > threshold)
+        success_rate = np.mean(portfolio_end > threshold) * 100
         minimum_annual_balance = np.min(self.portfolio_paths, axis=1)
-        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold)
+        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold) *100
         
 
         result = {

@@ -11,8 +11,7 @@ def register_results_callbacks(app, sim, inputs, res, data_dict):
     """
 
     @app.callback(
-        Output('success-rate', 'children'),
-        Output('success-rate', 'style'),
+        Output('success-header', 'children'),
         Output('sim-info', 'children'),
         Output('portfolio-median', 'figure'),
         Output('portfolio-p10', 'figure'),
@@ -30,109 +29,68 @@ def register_results_callbacks(app, sim, inputs, res, data_dict):
         Output('debug-output', 'children'),
         Input('run-button', 'n_clicks')
     )
-    def update_results(n_clicks):
-        # Unpack data
-        years = data_dict['years']
-        account_paths = data_dict['account_paths']
-        income_trajs = data_dict['income_trajs']
-        spending_trajs = data_dict['spending_trajs']
-        magi = data_dict['magi']
-        travel = data_dict['travel']
-        gifting = data_dict['gifting']
-        conversions = data_dict['conversions']
-        medicare = data_dict['medicare']
-        nsims = data_dict['nsims']
-        elapsed = data_dict['elapsed']
-        success_rate = data_dict['success_rate']
-        avoid_ruin_rate = data_dict['avoid_ruin_rate']
 
-        colors = px.colors.qualitative.Vivid
-        px_colors = px.colors.qualitative.Plotly
+def update_results(n_clicks):
+        # Just unpack what the simulator already gave us
+        results = {
+            "portfolio_paths": data_dict['portfolio_paths'],
+            "account_paths": data_dict['account_paths'],
+            "travel_paths": data_dict['travel'],
+            "gifting_paths": data_dict['gifting'],
+            "base_spending_paths": data_dict['base_spending'],
+            "lumpy_spending_paths": data_dict['lumpy'],
+            "rmd_paths": data_dict['rmds'],
+            "ssbenefit_paths": data_dict['ssbenefit'],
+            "portfolio_withdrawal_paths": data_dict['portfolio_withdrawal'],
+            "def457b_income_paths": data_dict['def457b_income'],
+            "pension_paths": data_dict['pension'],
+            "trust_income_paths": data_dict['trust_income'],
+            "taxes_paths": data_dict['taxes'],
+            "conversion_paths": data_dict['conversions'],
+            "medicare_paths": data_dict['medicare'],
+            "magi_paths": data_dict['magi'],
+            "success_rate": data_dict['success_rate'],
+            "avoid_ruin_rate": data_dict['avoid_ruin_rate'],
+        }
 
-        # --- Portfolio Figures ---
-        fig_port_median = go.Figure()
-        fig_port_p10 = go.Figure()
-        fig_port_p90 = go.Figure()
-        tax_type_map = data_dict['tax_type_map']
+        # Build the header exactly as you want
 
-        for i, (tax, label) in enumerate(tax_type_map.items()):
-            paths = np.zeros_like(account_paths[list(account_paths.keys())[0]])
-            for name, traj in account_paths.items():
-                if inputs.accounts[name]['tax'] == tax:
-                    paths += traj
-            if paths.max() == 0:
-                continue
-            median = np.median(paths, axis=0)
-            p10 = np.percentile(paths, 10, axis=0)
-            p90 = np.percentile(paths, 90, axis=0)
-            fig_port_median.add_trace(go.Scatter(x=years[1:], y=median[1:], stackgroup='one', fillcolor=colors[i % len(colors)], name=tax))
-            fig_port_p10.add_trace(go.Scatter(x=years[1:], y=p10[1:], stackgroup='one', fillcolor=colors[i % len(colors)], name=tax))
-            fig_port_p90.add_trace(go.Scatter(x=years[1:], y=p90[1:], stackgroup='one', fillcolor=colors[i % len(colors)], name=tax))
+        print("DEBUG: success_rate =", data_dict['success_rate'])
+        print("DEBUG: vanguard_color result =", vanguard_color(data_dict['success_rate']))
 
-        for f, title in zip([fig_port_median, fig_port_p10, fig_port_p90],
-                            ["Portfolio Median", "Portfolio 10% CL", "Portfolio 90% CL"]):
-            f.update_layout(title=title, xaxis_title="Year", yaxis_title="Balance ($)", template="plotly_white", hovermode="x unified", height=400)
+        success_header = html.Div(
+            [
+                html.Span(f"Success Rate: {data_dict['success_rate']:.1f}%", 
+                          style={'color': vanguard_color(data_dict['success_rate']), 'fontSize': 36, 'fontWeight': 'bold'}),
+                "   •   ",
+                html.Span(f"Ruin Avoidance: {data_dict['avoid_ruin_rate']:.1f}%", 
+                          style={'color': '#0052CC', 'fontSize': 30}),
+            ],
+            style={
+                'textAlign': 'center',
+                'padding': '20px',
+                'backgroundColor': '#f8f9fa',
+                'borderBottom': '3px solid #e9ecef',
+                'marginBottom': '20px'
+            }
+        )
 
-        # --- Income Figures ---
-        fig_income_median = go.Figure()
-        fig_income_p10 = go.Figure()
-        fig_income_p90 = go.Figure()
-        for i, (name, traj) in enumerate(income_trajs.items()):
-            median = np.median(traj, axis=0)
-            p10 = np.percentile(traj, 10, axis=0)
-            p90 = np.percentile(traj, 90, axis=0)
-            fig_income_median.add_trace(go.Scatter(x=years[2:], y=median[2:], stackgroup='one', fillcolor=px_colors[i % len(px_colors)], name=name))
-            fig_income_p10.add_trace(go.Scatter(x=years[2:], y=p10[2:], stackgroup='one', fillcolor=px_colors[i % len(px_colors)], name=name))
-            fig_income_p90.add_trace(go.Scatter(x=years[2:], y=p90[2:], stackgroup='one', fillcolor=px_colors[i % len(px_colors)], name=name))
-        for f, title in zip([fig_income_median, fig_income_p10, fig_income_p90],
-                            ["Income Median", "Income 10% CL", "Income 90% CL"]):
-            f.update_layout(title=title, xaxis_title="Year", yaxis_title="Income ($)", template="plotly_white", hovermode="x unified", height=400)
+        # NOW USE YOUR UTILITY — this does everything else perfectly
+        all_figures, _, _ = generate_all_plots(results, inputs, data_dict['elapsed'])
 
-        # --- Spending Figures ---
-        fig_spend_median = go.Figure()
-        fig_spend_p10 = go.Figure()
-        fig_spend_p90 = go.Figure()
-        for i, (name, traj) in enumerate(spending_trajs.items()):
-            median = np.median(traj, axis=0)
-            p10 = np.percentile(traj, 10, axis=0)
-            p90 = np.percentile(traj, 90, axis=0)
-            fig_spend_median.add_trace(go.Scatter(x=years[2:], y=median[2:], stackgroup='one', fillcolor=colors[i % len(colors)], name=name))
-            fig_spend_p10.add_trace(go.Scatter(x=years[2:], y=p10[2:], stackgroup='one', fillcolor=colors[i % len(colors)], name=name))
-            fig_spend_p90.add_trace(go.Scatter(x=years[2:], y=p90[2:], stackgroup='one', fillcolor=colors[i % len(colors)], name=name))
-        for f, title in zip([fig_spend_median, fig_spend_p10, fig_spend_p90],
-                            ["Spending Median", "Spending 10% CL", "Spending 90% CL"]):
-            f.update_layout(title=title, xaxis_title="Year", yaxis_title="Spending ($)", template="plotly_white", hovermode="x unified", height=400)
+        sim_info = f"{data_dict['nsims']:,} simulations • {data_dict['elapsed']:.1f}s"
+        debug_text = "\n".join(sim.debug_log) if hasattr(sim, 'debug_log') else ""
 
-        # --- MAGI, Travel/Gifting, Roth, Medicare ---
-        def simple_fig(name, traj, color="blue"):
-            f = go.Figure()
-            median = np.median(traj, axis=0)
-            p10 = np.percentile(traj, 10, axis=0)
-            p90 = np.percentile(traj, 90, axis=0)
-            f.add_trace(go.Scatter(x=years[2:], y=median[2:], line=dict(color=color, width=4), name='Median'))
-            f.add_trace(go.Scatter(x=years[2:], y=p10[2:], line=dict(color="red", width=2), name='10% CL'))
-            f.add_trace(go.Scatter(x=years[2:], y=p90[2:], line=dict(color="green", width=2), name='90% CL'))
-            f.update_layout(title=name, xaxis_title="Year", yaxis_title="Amount ($)", template="plotly_white", hovermode="x unified", height=400)
-            return f
-
-        fig_magi = simple_fig("MAGI", magi)
-        fig_travel_gifting = simple_fig("Travel & Gifting", travel+gifting)
-        fig_roth = simple_fig("ROTH Conversions", conversions)
-        fig_medicare = simple_fig("Medicare Costs", medicare)
-
-        # --- Return all outputs ---
-        success_text = f"Success Rate: {success_rate:.2f}%    Avoid Ruin: {avoid_ruin_rate:.2f}%"
-        success_style = {'fontSize': 30, 'color': vanguard_color(success_rate), 'textAlign': 'center'}
-        sim_info = f"{nsims:,} simulations • {elapsed:.1f}s"
-
-        debug_text = "\n".join(sim.debug_log)
-
-        return (success_text, success_style, sim_info,
-                fig_port_median, fig_port_p10, fig_port_p90,
-                fig_income_median, fig_income_p10, fig_income_p90,
-                fig_spend_median, fig_spend_p10, fig_spend_p90,
-                fig_magi, fig_travel_gifting, fig_roth, fig_medicare,
-                debug_text)
+        return (
+            success_header,
+            sim_info,
+            all_figures["portfolio-median"], all_figures["portfolio-p10"], all_figures["portfolio-p90"],
+            all_figures["income-median"],    all_figures["income-p10"],    all_figures["income-p90"],
+            all_figures["spending-median"],   all_figures["spending-p10"],   all_figures["spending-p90"],
+            all_figures["magi"], all_figures["travel-gifting"],
+            all_figures["roth-conversions"], all_figures["medicare-costs"],
+            debug_text
+        )
 
 def vanguard_color(success_rate):
     sr = max(0, min(100, success_rate))

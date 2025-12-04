@@ -27,14 +27,14 @@ def get_planner_inputs(**overrides):
 
     # Hard-coded defaults for UI-driven or simulation-level parameters
     ui_defaults = {
-        "nsims": 100,
+        "nsims": 1000,
         "tax_strategy": "fill_24_percent",
         "irmaa_strategy": "fill_IRMAA_3", 
         "max_roth": 240000.0,            
         "travel": 50000.0,               
         "gifting": 48000.0,              
         "ss_fail_year": 2033,            
-        "ss_fail_percent": 0.23,         
+        "ss_fail_percent": 0.23,
     }
 
     # Merge hard-coded defaults into inputs dictionary, without overwriting XML/UI overrides
