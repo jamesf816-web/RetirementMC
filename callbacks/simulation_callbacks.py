@@ -11,6 +11,8 @@ from engine.simulator import RetirementSimulator
 from utils.plotting import generate_all_plots, get_figure_ids
 from models import PlannerInputs
 
+years = None #initialize to pass to plotting
+
 def register_simulation_callbacks(app):
     
     # Output for the main success/ruin rate header 
@@ -71,13 +73,13 @@ def register_simulation_callbacks(app):
             current_age_p2 = inputs.current_year - inputs.person2_birth_year
             min_age = min(current_age_p1, current_age_p2)
             n_years = inputs.end_age - min_age
+            global years
             years = np.arange(inputs.current_year - 2, inputs.current_year + n_years) # need arrays filled back 2 years for IRMAA
-
 
             # ----------------------------------------------------------------
             # CALL NEW PLOTTING ENGINE HERE
             # ----------------------------------------------------------------
-            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed, years)
+            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
             
             # Prepare the figure list in the correct order for the return statement
             figure_list = [all_figures[id] for id in get_figure_ids()]
