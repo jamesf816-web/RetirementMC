@@ -300,7 +300,7 @@ main_layout = html.Div(
                         'border': '2px solid #0052CC',
                         'borderRadius': '8px',
                         'minWidth': '340px',
-                        'maxWidth': '400px',
+                        'maxWidth': '800px',
                         'height': '50px',
                         'justifySelf': 'end',
                         'lineHeight': '1.3',
