@@ -2,33 +2,14 @@
 from dash import html, dcc
 
 def create_results_layout():
-    """Static layout with placeholders for dynamic graphs."""
+    """
+    Static layout for the plots section only.
+    The success-header and sim-info elements are moved to main_layout.py.
+    """
     return html.Div([
-        html.Div(
-            id='success-header',  # ← changed from 'success-rate' to match your callback
-            style={
-                'padding': '30px 20px',
-                'backgroundColor': '#f8f9fa',
-                'borderBottom': '5px solid #0052CC',
-                'textAlign': 'center',
-                'fontWeight': 'bold',
-                'fontSize': '28px',
-                'minHeight': '100px',           # prevents collapse when empty
-                'position': 'relative',
-                'zIndex': 9999,
-                'marginBottom': '40px'
-            }
-        ),
 
-        # Sim info line
-        html.P(id='sim-info', style={
-            'textAlign': 'center',
-            'color': '#7f8c8d',
-            'fontSize': '18px',
-            'marginTop': '-20px',
-            'marginBottom': '40px'
-        }),
-
+        # NOTE: success-header and sim-info removed from here and placed in main_layout.py
+        
         # Portfolio trajectories
         html.Div([dcc.Graph(id='portfolio-median')], style={'margin': '40px 0'}),
         html.Div([dcc.Graph(id='portfolio-p10')], style={'margin': '40px 0'}),
@@ -50,6 +31,8 @@ def create_results_layout():
         html.Div([dcc.Graph(id='roth-conversions')], style={'margin': '40px 0'}),
         html.Div([dcc.Graph(id='medicare-costs')], style={'margin': '40px 0'}),
 
-        # Debug output
-        html.Pre(id='debug-output')
+        # Metrics table and debug
+        html.Div(id='metrics-table'),  # Receives Item 15: metrics_table (HTML table/Div)
+        html.Div(id='debug-output', style={'whiteSpace': 'pre-wrap', 'fontSize': '10px', 'color': 'gray', 'marginTop': '20px'}), # Receives Item 16: debug_text (String)
+
     ], style={'maxWidth': '1400px', 'margin': '0 auto'})

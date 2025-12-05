@@ -277,32 +277,19 @@ main_layout = html.Div(
             }
         ),
 
-        # 3. Sim Info Line (Output 2)
-        html.P(
-            id='sim-info', 
-            children="", # Initial empty
-            style={
-                'textAlign': 'center',
-                'color': '#7f8c8d',
-                'fontSize': '18px',
-                'marginTop': '20px',
-                'marginBottom': '40px'
-            }
-        ),
-
-        # 4. The detailed plots section (Calls the function that now only returns plots)
+        # 3-15. The detailed plots section (Calls the function that now only returns plots)
         html.Div(id="results", children=[
             create_results_layout(),
         ]),
 
-        # 5. The detailed metrics table remains separate below the plots
+        # 15. The detailed metrics table remains separate below the plots
         html.Div(
             id="metrics-table",
             children=html.P("Metrics will appear here after run.", style={"color": "#888", "fontStyle": "italic"}),
             style={"marginTop": "30px", "textAlign": "center"}
         ),
         
-        # 6. debug element
+        # 16. debug element
         html.Div(id="debug-output", style={"whiteSpace": "pre-wrap", "fontSize": 12, "display": "none"}),
         
     ] 

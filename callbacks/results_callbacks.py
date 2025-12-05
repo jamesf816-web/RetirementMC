@@ -1,18 +1,14 @@
-# results_callbacks.py
 from dash import Input, Output
-import plotly.graph_objects as go
-import plotly.express as px
 import numpy as np
+from .utils.plotting import generate_all_plots
 
 def register_results_callbacks(app, sim, inputs, res, data_dict):
     """
-    data_dict contains precomputed arrays needed for plots:
-    - years, account_paths, income trajectories, spending plans, MAGI, medicare, conversions, etc.
+    Registers the callback for updating simulation results.
     """
 
     @app.callback(
         Output('success-header', 'children'),
-        Output('sim-info', 'children'),
         Output('portfolio-median', 'figure'),
         Output('portfolio-p10', 'figure'),
         Output('portfolio-p90', 'figure'),
@@ -26,78 +22,68 @@ def register_results_callbacks(app, sim, inputs, res, data_dict):
         Output('travel-gifting', 'figure'),
         Output('roth-conversions', 'figure'),
         Output('medicare-costs', 'figure'),
+        Output('metrics-table', 'children'),
         Output('debug-output', 'children'),
-        Input('run-button', 'n_clicks')
+        Input('run', 'n_clicks')
     )
-
-def update_results(n_clicks):
-        # Just unpack what the simulator already gave us
+    def update_results(n_clicks):
+        # Ensure data_dict exists and contains all expected arrays
         results = {
-            "portfolio_paths": data_dict['portfolio_paths'],
-            "account_paths": data_dict['account_paths'],
-            "travel_paths": data_dict['travel'],
-            "gifting_paths": data_dict['gifting'],
-            "base_spending_paths": data_dict['base_spending'],
-            "lumpy_spending_paths": data_dict['lumpy'],
-            "rmd_paths": data_dict['rmds'],
-            "ssbenefit_paths": data_dict['ssbenefit'],
-            "portfolio_withdrawal_paths": data_dict['portfolio_withdrawal'],
-            "def457b_income_paths": data_dict['def457b_income'],
-            "pension_paths": data_dict['pension'],
-            "trust_income_paths": data_dict['trust_income'],
-            "taxes_paths": data_dict['taxes'],
-            "conversion_paths": data_dict['conversions'],
-            "medicare_paths": data_dict['medicare'],
-            "magi_paths": data_dict['magi'],
-            "success_rate": data_dict['success_rate'],
-            "avoid_ruin_rate": data_dict['avoid_ruin_rate'],
+            "portfolio_paths": data_dict.get('portfolio_paths', np.zeros((1,1))),
+            "account_paths": data_dict.get('account_paths', {}),
+            "travel_paths": data_dict.get('travel', np.zeros((1,1))),
+            "gifting_paths": data_dict.get('gifting', np.zeros((1,1))),
+            "base_spending_paths": data_dict.get('base_spending', np.zeros((1,1))),
+            "lumpy_spending_paths": data_dict.get('lumpy', np.zeros((1,1))),
+            "rmd_paths": data_dict.get('rmds', np.zeros((1,1))),
+            "ssbenefit_paths": data_dict.get('ssbenefit', np.zeros((1,1))),
+            "portfolio_withdrawal_paths": data_dict.get('portfolio_withdrawal', np.zeros((1,1))),
+            "def457b_income_paths": data_dict.get('def457b_income', np.zeros((1,1))),
+            "pension_paths": data_dict.get('pension', np.zeros((1,1))),
+            "trust_income_paths": data_dict.get('trust_income', np.zeros((1,1))),
+            "taxes_paths": data_dict.get('taxes', np.zeros((1,1))),
+            "conversion_paths": data_dict.get('conversions', np.zeros((1,1))),
+            "medicare_paths": data_dict.get('medicare', np.zeros((1,1))),
+            "magi_paths": data_dict.get('magi', np.zeros((1,1))),
+            "success_rate": data_dict.get('success_rate', 0.0),
+            "avoid_ruin_rate": data_dict.get('avoid_ruin_rate', 0.0),
+            "success_header": data_dict.get('success_header', "Click 'Run Simulation' to load results"),
+            "final_median": data_dict.get('final_median', np.nan)
         }
 
-        # Build the header exactly as you want
+        elapsed = data_dict.get("elapsed", None)
 
-        print("DEBUG: success_rate =", data_dict['success_rate'])
-        print("DEBUG: vanguard_color result =", vanguard_color(data_dict['success_rate']))
+        # Generate all figures, headers, and metrics table
+        all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
 
-        success_header = html.Div(
-            [
-                html.Span(f"Success Rate: {data_dict['success_rate']:.1f}%", 
-                          style={'color': vanguard_color(data_dict['success_rate']), 'fontSize': 36, 'fontWeight': 'bold'}),
-                "   •   ",
-                html.Span(f"Ruin Avoidance: {data_dict['avoid_ruin_rate']:.1f}%", 
-                          style={'color': '#0052CC', 'fontSize': 30}),
-            ],
-            style={
-                'textAlign': 'center',
-                'padding': '20px',
-                'backgroundColor': '#f8f9fa',
-                'borderBottom': '3px solid #e9ecef',
-                'marginBottom': '20px'
-            }
-        )
-
-        # NOW USE YOUR UTILITY — this does everything else perfectly
-        all_figures, _, _ = generate_all_plots(results, inputs, data_dict['elapsed'])
-
-        sim_info = f"{data_dict['nsims']:,} simulations • {data_dict['elapsed']:.1f}s"
-        debug_text = "\n".join(sim.debug_log) if hasattr(sim, 'debug_log') else ""
+        debug_log = data_dict.get("debug_log", [])
+        debug_text = "\n".join(str(x) for x in debug_log)
 
         return (
-            success_header,
-            sim_info,
+            rate_header,
             all_figures["portfolio-median"], all_figures["portfolio-p10"], all_figures["portfolio-p90"],
-            all_figures["income-median"],    all_figures["income-p10"],    all_figures["income-p90"],
-            all_figures["spending-median"],   all_figures["spending-p10"],   all_figures["spending-p90"],
+            all_figures["income-median"], all_figures["income-p10"], all_figures["income-p90"],
+            all_figures["spending-median"], all_figures["spending-p10"], all_figures["spending-p90"],
             all_figures["magi"], all_figures["travel-gifting"],
             all_figures["roth-conversions"], all_figures["medicare-costs"],
+            metrics_table,
             debug_text
         )
 
+
 def vanguard_color(success_rate):
+    # Check for valid numeric input. If not, return a safe, default color.
+    if not isinstance(success_rate, (int, float)) or success_rate is None or np.isnan(success_rate):
+        print(f"ERROR: vanguard_color received invalid rate: {success_rate}")
+        return 'rgb(128, 128, 128)'  # Gray color for safety
+
     sr = max(0, min(100, success_rate))
+    
     if sr >= 75:
         r = int(255 * (1 - (sr - 75)/25)); g = 200; b = 0
     elif sr >= 50:
         r = 255; g = int(200 * ((sr - 50)/25 + 0.5)); b = 0
     else:
         r = 255; g = int(200 * (sr/50)); b = 0
-    return f'rgb({r},{g},{b})'
+        
+    return f'rgb({int(r)},{int(g)},{int(b)})'

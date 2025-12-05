@@ -5,28 +5,31 @@ from dash import html
 import plotly.graph_objects as go
 import time
 import traceback
+import numpy as np
 from utils.input_adapter import get_planner_inputs
 from engine.simulator import RetirementSimulator
-from utils.plotting import generate_all_plots, get_figure_ids # 👈 IMPORT THE NEW FUNCTION
+from utils.plotting import generate_all_plots, get_figure_ids
+from models import PlannerInputs
 
 def register_simulation_callbacks(app):
     
-    # Output for the header to displat success/ruin rates
-    HEADER_OUTPUT = Output("rate-header-div", "children")
+    # Output for the main success/ruin rate header 
+    SUCCESS_HEADER_OUTPUT = Output("success-header", "children") 
 
     # Dynamically build the list of Figure IDs + 2 metrics IDs
     FIGURE_OUTPUTS = [Output(id, "figure") for id in get_figure_ids()]
     
     @app.callback(
         # Header
-        HEADER_OUTPUT,
+        SUCCESS_HEADER_OUTPUT,
         # Figures
         *FIGURE_OUTPUTS,
-        # 2 Metrics/Debug outputs
+        # Metrics Table 
         Output("metrics-table", "children"),
+        # Debug outputs
         Output("debug-output", "children"),
         Input("run", "n_clicks"),
-        # ... (rest of States remain the same) ...
+
         State("nsims", "value"), 
         State("base_annual_spending", "value"),
         State("withdrawal_rate", "value"),
@@ -39,6 +42,7 @@ def register_simulation_callbacks(app):
         prevent_initial_call=True
     )
     def run_simulation(n_clicks, n_sims, base_spending, withdrawal_rate, portfolio_rows, max_roth, travel, gifting, tax_strategy, irmaa_strategy):
+        from models import PlannerInputs
         if not n_clicks:
             return no_update
 
@@ -63,10 +67,17 @@ def register_simulation_callbacks(app):
 
             elapsed = time.time() - start_time
 
+            current_age_p1 = inputs.current_year - inputs.person1_birth_year
+            current_age_p2 = inputs.current_year - inputs.person2_birth_year
+            min_age = min(current_age_p1, current_age_p2)
+            n_years = inputs.end_age - min_age
+            years = np.arange(inputs.current_year - 2, inputs.current_year + n_years) # need arrays filled back 2 years for IRMAA
+
+
             # ----------------------------------------------------------------
             # CALL NEW PLOTTING ENGINE HERE
             # ----------------------------------------------------------------
-            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
+            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed, years)
             
             # Prepare the figure list in the correct order for the return statement
             figure_list = [all_figures[id] for id in get_figure_ids()]
@@ -78,10 +89,14 @@ def register_simulation_callbacks(app):
             avoid_ruin = results.get("avoid_ruin_rate", 0)
             sim_count = getattr(inputs, "num_simulations", 1000)
 
-            debug_output = (
+            final_debug_content = (
                 f"Simulation completed in {elapsed:.2f}s\n"
-                f"Success: {success:.1%} | Avoid Ruin: {avoid_ruin:.1%}\n"
+                f"Success: {success:.1f} | Avoid Ruin: {avoid_ruin:.1f}\n"
                 f"Debug log:\n" + "\n".join(getattr(sim, "debug_log", []))
+            )
+            debug_output = html.Div(
+                final_debug_content,
+                style={'whiteSpace': 'pre-wrap', 'fontSize': '18px', 'color': 'blue', 'marginTop': '10px'}
             )
             
             # The return must match the order of *FIGURE_OUTPUTS, then the two metrics
@@ -99,4 +114,4 @@ def register_simulation_callbacks(app):
 
             error_div = html.Div(error_msg, style={"color": "red"})
             
-            return (error_header, *empty_figures, error_div, error_msg)
+            return error_header, *empty_figures, error_div, error_msg

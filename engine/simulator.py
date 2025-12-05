@@ -391,7 +391,7 @@ class RetirementSimulator:
                 person1_benefit = 0.0
                 person2_benefit = 0.0
 
-                self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} year = {year} {self.ss_fail_year} {self.ss_fail_percent} \n")
+                #self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} year = {year} {self.ss_fail_year} {self.ss_fail_percent} \n")
                 # Decrease benfits if modeling SS Truct Fund failure
                 if year > self.ss_fail_year:
                     person1_ss *= (1 - self.ss_fail_percent)
@@ -1056,9 +1056,9 @@ class RetirementSimulator:
         # 7. Stats
         threshold = 500_000
         portfolio_end = self.portfolio_paths[:, -1]
-        success_rate = np.mean(portfolio_end > threshold)
+        success_rate = np.mean(portfolio_end > threshold) * 100
         minimum_annual_balance = np.min(self.portfolio_paths, axis=1)
-        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold)
+        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold) * 100
         
 
         result = {
