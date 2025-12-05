@@ -6,7 +6,7 @@ def pretty_currency_input(id, value, label=None, min_val=None, max_val=None, ste
     Generates a stylized currency input component.
     """
     
-    # --- 1. Label Generation Logic (Retained from previous fix) ---
+    # --- 1. Label Generation Logic 
     label_text = label
 
     if label_text is None:
@@ -15,7 +15,7 @@ def pretty_currency_input(id, value, label=None, min_val=None, max_val=None, ste
     if not label_text and label_text != 0:
         label_text = None
         
-    # --- 2. Input Properties (CORRECTED) ---
+    # --- 2. Input Properties 
     input_props = {}
     
     # Use native dcc.Input properties (min, max, step) instead of custom data- attributes
@@ -45,9 +45,9 @@ def pretty_currency_input(id, value, label=None, min_val=None, max_val=None, ste
     children.append(
         dcc.Input(
             id=id,
-            type='text', # Currency formatting remains as text type
+            type='text', 
             value=f"${value:,}",
-            placeholder="$500,000",
+            placeholder="$2,500,000",
             style={
                 'width': '100%',
                 'height': '36px',

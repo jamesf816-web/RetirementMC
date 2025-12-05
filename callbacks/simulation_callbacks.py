@@ -62,12 +62,12 @@ def register_simulation_callbacks(app):
             # Build inputs from current UI
             inputs = get_planner_inputs(
                 num_simulations=n_sims,
-                base_annual_spending=base_spending,
+                base_annual_spending=clean_currency(base_spending),
                 withdrawal_rate=withdrawal_rate,
                 portfolio_data=portfolio_rows,
-                max_roth=max_roth,
-                travel=travel,
-                gifting=gifting,
+                max_roth=clean_currency(max_roth),
+                travel=clean_currency(travel),
+                gifting=clean_currency(gifting),
                 tax_strategy=tax_strategy,
                 irmaa_strategy=irmaa_strategy
             )
