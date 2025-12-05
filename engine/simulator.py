@@ -3,9 +3,10 @@ import pandas as pd
 import copy
 import math
 
+from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+
 from config.expense_assumptions import *
 from config.market_assumptions import *
-from config.default_portfolio import *
 
 from models import PlannerInputs
 
@@ -20,7 +21,9 @@ class RetirementSimulator:
         self.inputs = inputs
         for field, value in inputs.__dict__.items():
             setattr(self, field, value)
-            
+
+        self._normalize_accounts()
+
         self.portfolio_paths = None
         self.conversion_paths = None
         self.account_paths = None
@@ -71,7 +74,33 @@ class RetirementSimulator:
         self.long_term_inflation_sigma = long_term_inflation_sigma
 
         self.corr_matrix = corr_matrix
+        
+    def _normalize_accounts(self):
+        if not self.accounts:
+                return
 
+        for name, acct in self.accounts.items():
+            # --- Fix balance ---
+            bal = acct.get("balance", 0)
+            if bal is None or bal == "" or str(bal).strip() == "":
+                bal = 0.0
+            else:
+                try:
+                    bal = float(str(bal).replace("$", "").replace(",", "").strip())
+                except:
+                    bal = 0.0
+            acct["balance"] = float(bal)
+
+            # --- Fix basis (critical for taxable accounts!) ---
+            basis = acct.get("basis")
+            if basis is None or basis == "" or str(basis).strip() == "":
+                acct["basis"] = bal          # assume full basis if blank
+            else:
+                try:
+                    acct["basis"] = float(str(basis).replace("$", "").replace(",", "").strip())
+                except:
+                    acct["basis"] = bal
+ 
     def generate_returns(self, n_full):
         """Generate Monte Carlo equity, bond, and inflation returns."""
         def mr_params(i_mu, lt_mu, i_sig, lt_sig, half_life=10):
@@ -407,7 +436,7 @@ class RetirementSimulator:
 
                 # Make adjustments for starting benefits befpre or after FRA
                 person1_own = person1_ss * self.get_ss_multiplier(self.person1_birth_year, self.person1_ss_age_years, self.person1_ss_age_months)
-                person2_own = person1_ss * self.get_ss_multiplier(self.person2_birth_year, self.person2_ss_age_years, self.person2_ss_age_months)
+                person2_own = person2_ss * self.get_ss_multiplier(self.person2_birth_year, self.person2_ss_age_years, self.person2_ss_age_months)
 
                 #self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} person1_own = ${person1_own:,.2f} year = {year} \n")
 
@@ -427,7 +456,7 @@ class RetirementSimulator:
                         month = self.person2_birth_month + self.person2_ss_age_months
                         months = 12 - month
                         inflation_index_start_person2 = inflation_index[year_idx]
-                    cola_multiplier = inflation_index[year_idx] / inflation_index_start_person1
+                    cola_multiplier = inflation_index[year_idx] / inflation_index_start_person2
                     person2_own = person2_ss * cola_multiplier
                     person2_benefit = months * max(person2_own, 0.5 * person2_spousal) #take higher of own or spousal benefit
 

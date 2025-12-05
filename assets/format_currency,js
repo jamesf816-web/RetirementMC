@@ -1,0 +1,51 @@
+// assets/format_currency.js
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('input[type="text"][pattern*="0-9,"]').forEach(input => {
+        const min = parseFloat(input.dataset.min) || -Infinity;
+        const max = parseFloat(input.dataset.max) || Infinity;
+        const step = parseFloat(input.dataset.step) || 1;
+
+        const parseNum = (val) => {
+            if (!val) return 0;
+            return parseFloat(val.replace(/[^0-9.]/g, '')) || 0;
+        };
+
+        const formatNumber = (num) => {
+            if (isNaN(num)) return '';
+            return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        };
+
+        const enforceConstraints = (num) => {
+            num = Math.max(min, Math.min(max, num));
+            if (step > 0) {
+                num = Math.round(num / step) * step;
+            }
+            return num;
+        };
+
+        input.addEventListener('input', (e) => {
+            const cursorPos = e.target.selectionStart;
+            const oldVal = e.target.value;
+            let num = parseNum(oldVal);
+            num = enforceConstraints(num);
+            e.target.value = formatNumber(num);
+            
+            // Maintain cursor
+            const newCursor = cursorPos + (e.target.value.length - oldVal.length);
+            e.target.setSelectionRange(newCursor, newCursor);
+        });
+
+        input.addEventListener('blur', (e) => {
+            let num = parseNum(e.target.value);
+            num = enforceConstraints(num);
+            e.target.value = formatNumber(num);
+        });
+
+        // Initial format
+        if (input.value) {
+            let num = parseNum(input.value);
+            num = enforceConstraints(num);
+            input.value = formatNumber(num);
+        }
+    });
+});

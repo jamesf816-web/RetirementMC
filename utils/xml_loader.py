@@ -1,6 +1,7 @@
 # utils/xml_loader.py
 import xml.etree.ElementTree as ET
 from typing import Any, Dict
+from pathlib import Path
 
 def parse_setup_xml(file_path: str) -> Dict[str, Any]:
     tree = ET.parse(file_path)
@@ -55,3 +56,7 @@ def parse_portfolio_xml(file_path: str) -> Dict[str, Dict]:
 
     return portfolio_dict
 
+CONFIG_DIR = Path(__file__).parent.parent / "config"
+
+DEFAULT_SETUP = parse_setup_xml(CONFIG_DIR / "default_setup.xml")
+DEFAULT_ACCOUNTS = parse_portfolio_xml(CONFIG_DIR / "default_portfolio.xml")

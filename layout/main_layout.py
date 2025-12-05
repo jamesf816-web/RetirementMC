@@ -3,21 +3,20 @@ import dash
 from dash import Dash
 from dash import dcc
 from dash import html
+
 import dash_ag_grid as dag
 import plotly.graph_objects as go
 
-from config.default_setup import default_setup as DEFAULT_SETUP
-from config.default_portfolio import default_accounts as DEFAULT_ACCOUNTS
+from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+from utils.currency import pretty_currency_input
+from utils.currency import pretty_percent_input
 
-# We will now import the PLOTS-ONLY layout creator, as we are defining the headers here.
 from layout.results_layout import create_results_layout
 
 # ----------------------------------------------------------------------
 # Application Layout Definition
 # ----------------------------------------------------------------------
 
-# The app variable is typically defined in your main application file, 
-# but for this layout file, we'll define the layout object itself.
 main_layout = html.Div(
     style={'fontFamily': 'Arial, sans-serif', 'margin': '2%', 'backgroundColor': '#f9f9fb'},
     children=[
@@ -26,10 +25,12 @@ main_layout = html.Div(
             style={'textAlign': 'center', 'color': 'black', 'marginBottom': 0}
         ),
         
- 
         # add stores for default portfolio inputs and setup inputs
         dcc.Store(id='portfolio-store', data=DEFAULT_ACCOUNTS),
         dcc.Store(id='setup-store', data=DEFAULT_SETUP),
+
+        # add store for simulation outputs
+        dcc.Store(id="simulation-data-store"),
 
         # ----------------------------------------------------------------------
         # ROW 1: Simulation Controls - Portfolio Editor, Slider and Run Button
@@ -173,48 +174,42 @@ main_layout = html.Div(
         ),
 
         # ----------------------------------------------------------------------
-        # ROW 2: Inputs and Dropdowns (7 Items)
+        # ROW 2: Inputs and Dropdowns (7 Items) – YOUR ORIGINAL PERFECT LAYOUT
         # ----------------------------------------------------------------------
         html.Div([
+            # Item 2A: Base Spending - Correct call: pretty_currency_input returns a list of children
+            html.Div(
+                pretty_currency_input('base_annual_spending', value=140000, label="Base Spending"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
 
-            # Item 2A: Base Spending (Input)
-            html.Div([
-                html.Label("Base Spending", style={'fontWeight': 'bold'}),
-                dcc.Input(id='base_annual_spending', type="number", value=140000, step=5000,
-                          style={'width': '100%', 'fontSize': 16, 'height': '30px', 'textAlign': 'center'})
-            ], style={'flex': '1', 'minWidth': '140px', 'textAlign': 'center'}), 
+            # Item 2B: Withdrawal Rate - Now using the new pretty_percent_input for matching style
+            html.Div(
+                pretty_percent_input('withdrawal_rate', value=0.050, step=0.001, label="Withdrawal Rate", placeholder="5.0%"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
 
-            # Item 2B: Withdrawal Rate (Input)
-            html.Div([
-                html.Label("Withdrawal Rate", style={'fontWeight': 'bold'}),
-                dcc.Input(id='withdrawal_rate', type="number", value=0.050, step=0.001,
-                          style={'width': '100%', 'fontSize': 16, 'height': '30px', 'textAlign': 'center'})
-            ], style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}),
+            # Item 2C: Max Roth Conv
+            html.Div(
+                pretty_currency_input('max_roth', value=240000, label="Max Roth Conv"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
 
-            # Item 2C: Max Roth Conv (Input)
-            html.Div([
-                html.Label("Max Roth Conv", style={'fontWeight': 'bold'}),
-                dcc.Input(id='max_roth', type="number", value=240000, step=5000,
-                          style={'width': '100%', 'fontSize': 16, 'height': '30px', 'textAlign': 'center'})
-            ], style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}),
+            # Item 2D: Target Travel
+            html.Div(
+                pretty_currency_input('travel', value=50000, label="Target Travel"),
+                style={'flex': '1', 'minWidth': '140px', 'textAlign': 'center'}
+            ),
 
-            # Item 2D: Target Travel (Input)
-            html.Div([
-                html.Label("Target Travel", style={'fontWeight': 'bold'}),
-                dcc.Input(id='travel', type="number", value=50000, step=1000,
-                          style={'width': '100%', 'fontSize': 16, 'height': '30px', 'textAlign': 'center'})
-            ], style={'flex': '1', 'minWidth': '120px', 'textAlign': 'center'}),
+            # Item 2E: Target Gifting
+            html.Div(
+                pretty_currency_input('gifting', value=42000, label="Target Gifting"),
+                style={'flex': '1', 'minWidth': '140px', 'textAlign': 'center'}
+            ),
 
-            # Item 2E: Target Gifting (Input)
+            # Item 2F: Tax Strategy (Dropdown) - Added display: block to Label for consistency
             html.Div([
-                html.Label("Target Gifting", style={'fontWeight': 'bold'}),
-                dcc.Input(id='gifting', type="number", value=42000, step=1000,
-                          style={'width': '100%', 'fontSize': 16, 'height': '30px', 'textAlign': 'center'})
-            ], style={'flex': '1', 'minWidth': '120px', 'textAlign': 'center'}),
-
-            # Item 2F: Tax Strategy (Dropdown)
-            html.Div([
-                html.Label("Tax Strategy", style={'fontWeight': 'bold'}),
+                html.Label("Tax Strategy", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
                 dcc.Dropdown(
                     id='tax_strategy',
                     options=[
@@ -225,13 +220,14 @@ main_layout = html.Div(
                         {'label': 'No conversions', 'value': 'none'},
                     ],
                     value='fill_24_percent',
-                    style={'fontSize': 16, 'height': '30px', 'lineHeight': '20px', 'textAlign': 'center'}
+                    # Adjusted style to match height of input boxes (36px)
+                    style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center'} 
                 )
             ], style={'flex': '3', 'minWidth': '260px', 'textAlign': 'center'}),
 
-            # Item 2G: IRMAA Strategy (Dropdown)
+            # Item 2G: IRMAA Strategy (Dropdown) - Added display: block to Label for consistency
             html.Div([
-                html.Label("IRMAA Strategy", style={'fontWeight': 'bold'}),
+                html.Label("IRMAA Strategy", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
                 dcc.Dropdown(
                     id='irmaa_strategy',
                     options=[
@@ -242,54 +238,94 @@ main_layout = html.Div(
                         {'label': 'Stay under Tier 4 ($750k)', 'value': 'fill_IRMAA_4'},
                     ],
                     value='fill_IRMAA_3',
-                    style={'fontSize': 16, 'height': '30px', 'lineHeight': '20px', 'textAlign': 'center'}
+                    # Adjusted style to match height of input boxes (36px)
+                    style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center'}
                 )
             ], style={'flex': '3', 'minWidth': '260px', 'textAlign': 'center'}),
+
         ], style={
-            'display': 'flex', 
-            'gap': '15px', 
+            'display': 'flex',
+            'gap': '15px 15px', # Ensures clean row and column separation
             'flexWrap': 'wrap',
             'marginBottom': '10px',
             'width': '100%',
             'boxSizing': 'border-box'
-        }), # closes row 2
+        }),
 
         # ----------------------------------------------------------------------
-        # RESULTS SECTION (Fixed Structure)
+        # RESULTS SECTION 
         # ----------------------------------------------------------------------
-
-        # 1. The main header (Title moved here for correct ordering)
-        #html.H2("Simulation Results", style={"marginTop": "10px", "textAlign": "center"}),
-        
-        # 2. Success/Ruin Rate Header (Output 1)
         html.Div(
-            id='success-header',
-            children="Click 'Run Simulation' to load results", # Initial text
             style={
-                'padding': '10px 10px',
+                'display': 'grid',
+                'gridTemplateColumns': 'auto 1fr',
+                'gap': '30px',
+                'alignItems': 'center',
+                'padding': '20px',
                 'backgroundColor': '#f8f9fa',
-                'borderBottom': '5px solid #0052CC',
-                'textAlign': 'center',
-                'fontWeight': 'bold',
-                'fontSize': '28px',
-                'minHeight': '20px', 
-                'marginBottom': '10px'
-            }
+                'borderRadius': '12px',
+                'boxShadow': '0 4px 12px rgba(0,0,0,0.05)',
+                'marginBottom': '15px',
+                'minHeight': '68px'
+            },
+            children=[
+                html.Div(
+                    style={
+                        'display': 'flex',
+                        'gap': '30px',
+                        'justifyContent': 'flex-start',
+                        'flexWrap': 'nowrap',
+                        'overflowX': 'auto',
+                        'paddingRight': '20px'
+                    },
+                    children=[
+                        html.Div(
+                            pretty_currency_input('success-threshold', value=500000, label="Success Threshold")
+                        ),
+                        html.Div(
+                            pretty_currency_input('avoid-ruin-threshold', value=500000, label="Avoid Ruin Threshold")
+                        ),
+                    ]
+                ),
+                html.Div(
+                    id='success-header',
+                    children="Click 'Run Simulation' to load results",
+                    style={
+                        'textAlign': 'center',
+                        'fontWeight': 'bold',
+                        'fontSize': '20px',
+                        'color': '#1a1a1a',
+                        'padding': '0px 10px',
+                        'backgroundColor': '#e3f2fd',
+                        'border': '2px solid #0052CC',
+                        'borderRadius': '8px',
+                        'minWidth': '340px',
+                        'maxWidth': '400px',
+                        'height': '50px',
+                        'justifySelf': 'end',
+                        'lineHeight': '1.3',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center'
+                    }
+                ),
+            ]
         ),
-
-        # 3-15. The detailed plots section (Calls the function that now only returns plots)
+        
+ 
+        # The detailed plots section (Calls the function that now only returns plots)
         html.Div(id="results", children=[
             create_results_layout(),
         ]),
 
-        # 15. The detailed metrics table remains separate below the plots
+        # The detailed metrics table remains separate below the plots
         html.Div(
             id="metrics-table",
             children=html.P("Metrics will appear here after run.", style={"color": "#888", "fontStyle": "italic"}),
             style={"marginTop": "30px", "textAlign": "center"}
         ),
         
-        # 16. debug element
+        # debug element
         html.Div(id="debug-output", style={"whiteSpace": "pre-wrap", "fontSize": 12, "display": "none"}),
         
     ] 

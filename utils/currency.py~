@@ -1,0 +1,28 @@
+# utils/currency.py
+from dash import dcc, html
+
+def pretty_currency_input(id, value, label=None, min_val=None, max_val=None, step=None):
+    if label is None:
+        label = " ".join(word.capitalize() for word in id.replace('-', '_').split('_'))
+
+    return html.Div([
+        html.Label(label, style={'fontWeight': 'bold', 'fontSize': 16, 'marginBottom': '6px'}),
+        dcc.Input(
+            id=id,
+            type='text',
+            value=f"${value:,}",
+            placeholder="$500,000",
+            style={
+                'width': '150px',
+                'height': '36px',
+                'textAlign': 'center',
+                'fontSize': '16px',
+                'fontFamily': 'monospace',
+                'fontWeight': '500',
+                'border': '1px solid #ccc',
+                'borderRadius': '6px'
+            },
+            pattern=r'^\$?\s*[0-9,]{0,15}(\.[0-9]{0,2})?$',
+            debounce=True,
+        )
+    ], style={'display': 'inline-block'})

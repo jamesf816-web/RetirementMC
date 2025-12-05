@@ -57,20 +57,44 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
 # ------------------------------------------------------------------
 def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     """
-    trajectories_dict = {label: data_array}  # data_array shape (n_sims, n_years)
+    Plots median (solid thick) + 10th and 90th percentiles (dashed thin)
     """
     fig = go.Figure()
-
+    
     for label, data in trajectories_dict.items():
-        y = np.median(data, axis=0)[2:]  # median + skip first 2 years
+        data_trimmed = data[:, 2:]  # skip first 2 years
+        years = sim.years[2:]
 
+        # Median (your original)
+        y_median = np.median(data_trimmed, axis=0)
         fig.add_trace(go.Scatter(
-            x=sim.years[2:], #skip first 2 years
-            y=y,
+            x=years,
+            y=y_median,
             mode='lines',
             name=label,
             line=dict(width=3),
-            hovertemplate='Year: %{{x}}<br>{}: $%{{y:,.0f}}<extra></extra>'.format(label)
+            hovertemplate=f'<b>{label}</b><br>Year: %{{x}}<br>Value: $%{{y:,.0f}}<extra></extra>'
+        ))
+
+        # 10th and 90th percentiles
+        p10 = np.percentile(data_trimmed, 10, axis=0)
+        p90 = np.percentile(data_trimmed, 90, axis=0)
+        color = fig.data[-1].line.color  # grab the color from the median line
+
+        fig.add_trace(go.Scatter(
+            x=years, y=p90,
+            line=dict(color=color, width=1.5, dash='dash'),
+            name=f"{label} 90th",
+            showlegend=False,
+            hovertemplate=f'{label} 90th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=years, y=p10,
+            line=dict(color=color, width=1.5, dash='dash'),
+            name=f"{label} 10th",
+            showlegend=False,
+            hovertemplate=f'{label} 10th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
         ))
 
     fig.update_layout(

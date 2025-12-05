@@ -10,6 +10,7 @@ from utils.input_adapter import get_planner_inputs
 from engine.simulator import RetirementSimulator
 from utils.plotting import generate_all_plots, get_figure_ids
 from models import PlannerInputs
+from utils.currency import clean_currency
 
 years = None #initialize to pass to plotting
 
@@ -20,6 +21,9 @@ def register_simulation_callbacks(app):
 
     # Dynamically build the list of Figure IDs + 2 metrics IDs
     FIGURE_OUTPUTS = [Output(id, "figure") for id in get_figure_ids()]
+
+    # Output for use by register_returns_callback
+    STORE_OUTPUTS = Output('simulation-data-store', 'data')
     
     @app.callback(
         # Header
@@ -30,6 +34,10 @@ def register_simulation_callbacks(app):
         Output("metrics-table", "children"),
         # Debug outputs
         Output("debug-output", "children"),
+        # Store output
+        STORE_OUTPUTS,
+        
+        # Input
         Input("run", "n_clicks"),
 
         State("nsims", "value"), 
@@ -69,15 +77,16 @@ def register_simulation_callbacks(app):
 
             elapsed = time.time() - start_time
 
+            # Build years array used in plots (needs to go back 2 years for IRMAA calcs)
             current_age_p1 = inputs.current_year - inputs.person1_birth_year
             current_age_p2 = inputs.current_year - inputs.person2_birth_year
             min_age = min(current_age_p1, current_age_p2)
             n_years = inputs.end_age - min_age
             global years
-            years = np.arange(inputs.current_year - 2, inputs.current_year + n_years) # need arrays filled back 2 years for IRMAA
+            years = np.arange(inputs.current_year - 2, inputs.current_year + n_years) 
 
             # ----------------------------------------------------------------
-            # CALL NEW PLOTTING ENGINE HERE
+            # GENERATE PLOTS
             # ----------------------------------------------------------------
             all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
             
@@ -85,7 +94,36 @@ def register_simulation_callbacks(app):
             figure_list = [all_figures[id] for id in get_figure_ids()]
             
             # ----------------------------------------------------------------
-            # Metrics and Debug (Simplified)
+            # PREPARE DATA STORE FOR RESULTS
+            # ----------------------------------------------------------------
+            results_to_store = {
+                "portfolio_paths": results["portfolio_paths"].tolist(),
+                "account_paths": {k: v.tolist() for k, v in results.get("account_paths", {}).items()},
+                "travel": results.get("travel_paths", np.zeros((1,1))).tolist(),
+                "gifting": results.get("gifting_paths", np.zeros((1,1))).tolist(),
+                "base_spending": results.get("base_spending_paths", np.zeros((1,1))).tolist(),
+                "lumpy": results.get("lumpy_spending_paths", np.zeros((1,1))).tolist(),
+                "rmds": results.get("rmd_paths", np.zeros((1,1))).tolist(),
+                "ssbenefit": results.get("ssbenefit_paths", np.zeros((1,1))).tolist(),
+                "portfolio_withdrawal": results.get("portfolio_withdrawal_paths", np.zeros((1,1))).tolist(),
+                "def457b_income": results.get("def457b_income_paths", np.zeros((1,1))).tolist(),
+                "pension": results.get("pension_paths", np.zeros((1,1))).tolist(),
+                "trust_income": results.get("trust_income_paths", np.zeros((1,1))).tolist(),
+                "taxes": results.get("taxes_paths", np.zeros((1,1))).tolist(),
+                "conversions": results.get("conversion_paths", np.zeros((1,1))).tolist(),
+                "medicare": results.get("medicare_paths", np.zeros((1,1))).tolist(),
+                "magi": results.get("magi_paths", np.zeros((1,1))).tolist(),
+                "success_rate": float(results.get("success_rate", 0)),
+                "avoid_ruin_rate": float(results.get("avoid_ruin_rate", 0)),
+                "final_median": float(results.get("final_median", 0)),
+                "elapsed": elapsed,
+                "debug_log": getattr(sim, "debug_log", []),
+                # Store inputs too if needed later
+                #"inputs": inputs.dict() if hasattr(inputs, "dict") else inputs.__dict__,
+            }
+ 
+            # ----------------------------------------------------------------
+            # Metrics and Debug 
             # ----------------------------------------------------------------
             success = results.get("success_rate", 0)
             avoid_ruin = results.get("avoid_ruin_rate", 0)
@@ -102,7 +140,7 @@ def register_simulation_callbacks(app):
             )
             
             # The return must match the order of *FIGURE_OUTPUTS, then the two metrics
-            return rate_header, *figure_list, metrics_table, debug_output
+            return rate_header, *figure_list, metrics_table, debug_output, results_to_store
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -116,4 +154,4 @@ def register_simulation_callbacks(app):
 
             error_div = html.Div(error_msg, style={"color": "red"})
             
-            return error_header, *empty_figures, error_div, error_msg
+            return error_header, *empty_figures, error_div, error_msg, results_to_store

@@ -1,7 +1,28 @@
-from dash import Input, Output, State, callback
+from dash import Input, Output, State, callback, no_update, ctx
 from dash.exceptions import PreventUpdate
-from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
+from utils.xml_loader import parse_portfolio_xml
 
+DEFAULT_PORTFOLIO_XML_PATH = 'config/default_portfolio.xml'
+
+# --- Data Loader Function ---
+def get_default_portfolio_data():
+    """
+    Loads the default account data from the XML file using the utility.
+    Includes a fallback in case the XML file is not found.
+    """
+    try:
+        # Use the imported utility function with the defined file path
+        return parse_portfolio_xml(DEFAULT_PORTFOLIO_XML_PATH)
+    except FileNotFoundError:
+        print(f"ERROR: Default portfolio XML file not found at {DEFAULT_PORTFOLIO_XML_PATH}. Returning fallback data.")
+        # Fallback to a hardcoded structure (matching the mock data) if the file is missing/inaccessible
+        return {
+            "Roth_IRA": {"balance": 50000, "equity": 0.80, "bond": 0.20, "tax": "roth", "owner": "person1", "basis": None, "mandatory_yield": None, "rmd_factor_table": None},
+            "401k": {"balance": 200000, "equity": 0.70, "bond": 0.30, "tax": "traditional", "owner": "person1", "basis": None, "mandatory_yield": None, "rmd_factor_table": None},
+            "Taxable_Brokerage": {"balance": 150000, "equity": 0.90, "bond": 0.10, "tax": "taxable", "owner": "person1", "basis": 150000, "mandatory_yield": None, "rmd_factor_table": None},
+        }
+
+    
 def register_editor_callbacks(app):
 
     # ----------------------------------------------------------------------
@@ -37,7 +58,7 @@ def register_editor_callbacks(app):
     )
     def reset_portfolio(n_clicks):
         if n_clicks:
-            from config.default_portfolio import accounts as DEFAULT_ACCOUNTS
+            DEFAULT_ACCOUNTS = get_default_portfolio_data() 
             return [{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()]
         return no_update
 
