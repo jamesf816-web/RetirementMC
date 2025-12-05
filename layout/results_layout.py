@@ -31,8 +31,6 @@ def create_results_layout():
         html.Div([dcc.Graph(id='roth-conversions')], style={'margin': '40px 0'}),
         html.Div([dcc.Graph(id='medicare-costs')], style={'margin': '40px 0'}),
 
-        # Metrics table and debug
-        html.Div(id='metrics-table'),  # Receives Item 15: metrics_table (HTML table/Div)
-        html.Div(id='debug-output', style={'whiteSpace': 'pre-wrap', 'fontSize': '10px', 'color': 'gray', 'marginTop': '20px'}), # Receives Item 16: debug_text (String)
+        # NOTE: Metrics table abd debug log removed from here and placed in main_layout.py
 
     ], style={'maxWidth': '1400px', 'margin': '0 auto'})

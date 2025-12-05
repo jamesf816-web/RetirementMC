@@ -102,7 +102,7 @@ def create_metrics_table(results, inputs, elapsed):
 
 
 # ------------------------------------------------------------------
-# MAIN FUNCTION – unchanged except it now works perfectly
+# MAIN FUNCTION 
 # ------------------------------------------------------------------
 def generate_all_plots(results: dict, inputs, elapsed, years):
     # Extract paths

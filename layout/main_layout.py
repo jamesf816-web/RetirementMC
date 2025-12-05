@@ -249,7 +249,7 @@ main_layout = html.Div(
             'display': 'flex', 
             'gap': '15px', 
             'flexWrap': 'wrap',
-            'marginBottom': '30px',
+            'marginBottom': '10px',
             'width': '100%',
             'boxSizing': 'border-box'
         }), # closes row 2
@@ -259,50 +259,37 @@ main_layout = html.Div(
         # ----------------------------------------------------------------------
 
         # 1. The main header (Title moved here for correct ordering)
-        html.H2("Simulation Results", style={"marginTop": "40px", "textAlign": "center"}),
+        #html.H2("Simulation Results", style={"marginTop": "10px", "textAlign": "center"}),
         
         # 2. Success/Ruin Rate Header (Output 1)
         html.Div(
             id='success-header',
             children="Click 'Run Simulation' to load results", # Initial text
             style={
-                'padding': '30px 20px',
+                'padding': '10px 10px',
                 'backgroundColor': '#f8f9fa',
                 'borderBottom': '5px solid #0052CC',
                 'textAlign': 'center',
                 'fontWeight': 'bold',
                 'fontSize': '28px',
-                'minHeight': '30px', 
-                'marginBottom': '40px'
+                'minHeight': '20px', 
+                'marginBottom': '10px'
             }
         ),
 
-        # 3. Sim Info Line (Output 2)
-        html.P(
-            id='sim-info', 
-            children="", # Initial empty
-            style={
-                'textAlign': 'center',
-                'color': '#7f8c8d',
-                'fontSize': '18px',
-                'marginTop': '20px',
-                'marginBottom': '40px'
-            }
-        ),
-
-        # 4. The detailed plots section (Calls the function that now only returns plots)
+        # 3-15. The detailed plots section (Calls the function that now only returns plots)
         html.Div(id="results", children=[
             create_results_layout(),
         ]),
 
-        # 5. The detailed metrics table remains separate below the plots
+        # 15. The detailed metrics table remains separate below the plots
         html.Div(
             id="metrics-table",
             children=html.P("Metrics will appear here after run.", style={"color": "#888", "fontStyle": "italic"}),
             style={"marginTop": "30px", "textAlign": "center"}
         ),
         
-        # 6. debug element
+        # 16. debug element
         html.Div(id="debug-output", style={"whiteSpace": "pre-wrap", "fontSize": 12, "display": "none"}),
         
     ] 
