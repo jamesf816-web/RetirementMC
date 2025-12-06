@@ -36,15 +36,53 @@ def compute_rmds(self, accounts, accounts_bal, year_idx):
 # -------------------------------
 # Pension income (yearly, monthly scale handled in loop)
 # -------------------------------
-def get_pension_income(self, year_idx):
-    return 30000  # Placeholder: replace with your real pension logic
+def _get_pension_benefit(self, current_year: int, inflation_index: float) -> float:
+        """Calculates pension income, considering start ages and inflation."""
+        income = 0.0
 
+        # --- Person 1 Pension ---
+        age1 = current_year - self.person1_birth_year
+        pension_start_age1 = self.person1_pension_age_years + self.person1_pension_age_months / 12
+        
+        if age1 >= pension_start_age1 and getattr(self, 'person1_pension_amount', 0.0) > 0:
+            # Assuming the amount is in today's dollars and inflation-adjusted over time
+            income += self.person1_pension_amount * inflation_index
+
+        # --- Person 2 Pension (If applicable) ---
+        if getattr(self, 'person2_birth_year', None) is not None:
+            age2 = current_year - self.person2_birth_year
+            pension_start_age2 = self.person2_pension_age_years + self.person2_pension_age_months / 12
+            
+            if age2 >= pension_start_age2 and getattr(self, 'person2_pension_amount', 0.0) > 0:
+                income += self.person2_pension_amount * inflation_index
+                
+        return income
+    
 # -------------------------------
 # Social Security benefit (yearly)
 # -------------------------------
-def get_ss_benefit(self, year_idx):
-    return 24000  # Placeholder
-
+def _get_social_security_benefit(self, current_year: int, inflation_index: float) -> float:
+        """Calculates the total SS benefit for the year, considering start ages and inflation."""
+        benefit = 0.0
+        
+        # --- Person 1 SS ---
+        age1 = current_year - self.person1_birth_year
+        ss_start_age1 = self.person1_ss_age_years + self.person1_ss_age_months / 12
+        
+        if age1 >= ss_start_age1 and getattr(self, 'person1_ss_fra', 0.0) > 0:
+            # Assumes person1_ss_fra is the real dollar benefit amount in the current year (year 0)
+            benefit += self.person1_ss_fra * inflation_index
+            
+        # --- Person 2 SS (If applicable) ---
+        if getattr(self, 'person2_birth_year', None) is not None:
+            age2 = current_year - self.person2_birth_year
+            ss_start_age2 = self.person2_ss_age_years + self.person2_ss_age_months / 12
+            
+            if age2 >= ss_start_age2 and getattr(self, 'person2_ss_fra', 0.0) > 0:
+                benefit += self.person2_ss_fra * inflation_index
+                
+        return benefit
+    
 # -------------------------------
 # Quarterly withdrawals
 # -------------------------------
