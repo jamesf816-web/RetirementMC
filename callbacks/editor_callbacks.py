@@ -1,15 +1,21 @@
 import dash
 from dash import Input, Output, State, callback, no_update, ctx
-from dash import dcc
-from dash import html
 from dash.exceptions import PreventUpdate
+from utils.currency import clean_currency
+# Import the specific utility functions needed
 from utils.xml_loader import parse_portfolio_xml
-from utils.currency import clean_currency 
+from utils.xml_loader import parse_xml_content_to_dict
+from utils.xml_writer import create_portfolio_xml
+
+import base64
+import io
+import json
+from typing import Dict, Any, List
 
 DEFAULT_PORTFOLIO_XML_PATH = 'config/default_portfolio.xml'
 
-# --- Data Loader Function ---
-def get_default_portfolio_data():
+# --- Data Loader Helper Function ---
+def get_default_portfolio_data() -> Dict[str, Dict]:
     """
     Loads the default account data from the XML file using the utility.
     Includes a fallback in case the XML file is not found.
@@ -26,63 +32,108 @@ def get_default_portfolio_data():
             "Taxable_Brokerage": {"balance": 150000, "equity": 0.90, "bond": 0.10, "tax": "taxable", "owner": "person1", "basis": 150000, "mandatory_yield": None, "rmd_factor_table": None},
         }
 
-    
+
 def register_editor_callbacks(app):
 
     # ----------------------------------------------------------------------
-    # Portfolio Grid / Store Callbacks
+    # 1. Portfolio Grid / Data Store Callbacks (Load, Reset, Update)
     # ----------------------------------------------------------------------
 
     @app.callback(
-        Output('portfolio-store', 'data'),
-        Input('portfolio-grid', 'cellValueChanged'),
-        State('portfolio-grid', 'rowData'),
-        State('portfolio-store', 'data'),
-        prevent_initial_call=True
-    )
-
-    def update_portfolio_store(changed_cell, row_data, current_store):
-        if not ctx.triggered:
-            return no_update
-
-        # Rebuild dict from current grid rows (name → row dict)
-        new_data = {}
-        for row in row_data:
-            name = row.get("name")
-            if name:
-                new_data[name] = row
-
-        return new_data
-
-    # Optional: Reset to defaults button
-    @app.callback(
-        Output("portfolio-grid", "rowData"),
+        # FIX: The store is targeted by multiple callbacks, requires allow_duplicate=True
+        Output('portfolio-store', 'data', allow_duplicate=True),
+        # FIX: Status is also targeted by multiple, requires allow_duplicate=True
+        Output('portfolio-status', 'children', allow_duplicate=True),
+        Output('portfolio-grid', 'rowData', allow_duplicate=True),
+        Input('upload-data', 'contents'),
         Input("reset-portfolio-btn", "n_clicks"),
+        State('upload-data', 'filename'),
         prevent_initial_call=True
     )
-    def reset_portfolio(n_clicks):
-        if n_clicks:
-            DEFAULT_ACCOUNTS = get_default_portfolio_data() 
-            return [{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()]
-        return no_update
+    def update_portfolio_data_and_grid(contents, n_clicks_reset, filename):
+        """
+        Handles two triggers: File Upload and Reset to Defaults.
+        Updates the portfolio data store, the AG Grid rowData, and the status message.
+        """
+        trigger_id = ctx.triggered_id if ctx.triggered else None
 
+        # --- Trigger 1: Reset to Defaults Button ---
+        if trigger_id == "reset-portfolio-btn" and n_clicks_reset:
+            DEFAULT_ACCOUNTS = get_default_portfolio_data()
+            grid_data = [{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()]
+            status = "Portfolio reset to default configuration."
+            
+            # Return store data, status, and grid data
+            return DEFAULT_ACCOUNTS, status, grid_data
+        
+        # --- Trigger 2: File Upload ---
+        elif trigger_id == 'upload-data' and contents is not None:
+            try:
+                # 1. Decode the content string
+                content_type, content_string = contents.split(',')
+                decoded = base64.b64decode(content_string)
+
+                # 2. Use a file-like object to pass the content to your parser
+                xml_data_bytes = io.BytesIO(decoded)
+                
+                # 3. Call your parser function
+                new_portfolio_data = parse_xml_content_to_dict(xml_data_bytes)
+                
+                # 4. Prepare grid data
+                grid_data = [{**v, "name": k} for k, v in new_portfolio_data.items()]
+
+                status = f"Successfully loaded: {filename}"
+                # Return store data, status, and grid data
+                return new_portfolio_data, status, grid_data
+
+            except Exception as e:
+                print(f"Error processing XML file: {e}")
+                status = f"Error loading file: {filename}. Please check file format or log for details."
+                # On error, prevent update to keep existing data
+                raise PreventUpdate
+
+        # Prevent update for any other reason
+        raise PreventUpdate
+
+    # ----------------------------------------------------------------------
+    # 2. Setup Data Store Update
+    # ----------------------------------------------------------------------
     @app.callback(
         Output("setup-store", "data"),
         Input("setup-grid", "rowData"),
+        # IMPROVEMENT: Prevent initial call to avoid firing on app load
+        prevent_initial_call=True
     )
-    def update_setup_store(rows):
+    def update_setup_store(rows: List[Dict[str, Any]]):
+        """
+        Updates the dcc.Store for setup data whenever the setup AG Grid is edited.
+        Assumes 'rows' is the list of dictionaries directly from the grid.
+        """
+        if rows is None:
+            raise PreventUpdate
+        # Since setup data is simple, returning rows might be fine, but converting 
+        # to a dict based on a key (if applicable) is often cleaner. Assuming list-of-dicts is required.
         return rows
+    
+    # ----------------------------------------------------------------------
+    # 3. Add New Account
+    # ----------------------------------------------------------------------
 
-    # Add new account
     @app.callback(
+        # The grid rowData is updated by multiple callbacks (reset, upload, add), requires allow_duplicate
         Output('portfolio-grid', 'rowData', allow_duplicate=True),
         Input('add-account-btn', 'n_clicks'),
         State('portfolio-grid', 'rowData'),
         prevent_initial_call=True
     )
-    def add_account(n, current_rows):
-        if n == 0:
+    def add_account(n_clicks: int, current_rows: List[Dict[str, Any]]):
+        """Adds a blank, default account row to the portfolio AG Grid."""
+        if not n_clicks: # Check if n_clicks is None or 0
             raise PreventUpdate
+            
+        if not current_rows:
+            current_rows = []
+            
         new_name = f"New_Account_{len(current_rows)+1}"
         new_row = {
             "name": new_name,
@@ -97,25 +148,30 @@ def register_editor_callbacks(app):
         }
         return current_rows + [new_row]
 
+    # ----------------------------------------------------------------------
+    # 4. UI Collapse Toggles
+    # ----------------------------------------------------------------------
 
-    # Toggle the portfolio editor open/closed
     @app.callback(
         Output("portfolio-collapse-content", "style"),
         Output("portfolio-collapse-button", "children"),
         Input("portfolio-collapse-button", "n_clicks"),
         State("portfolio-collapse-content", "style"),
-        prevent_initial_call=True
     )
     def toggle_portfolio_collapse(n_clicks, current_style):
-        if not n_clicks:
-            raise PreventUpdate
+        """Toggles the visibility and button text of the Portfolio Editor panel."""
+        if not ctx.triggered or ctx.triggered_id != "portfolio-collapse-button":
+            # IMPROVEMENT: Use no_update instead of raising PreventUpdate when not triggered
+            return no_update, no_update
+
+        # Check the current display style to determine if we should open or close
         if current_style and current_style.get("display") == "block":
+            # Currently open, so close it
             return {"display": "none"}, "Portfolio Editor – Click to Open"
         else:
+            # Currently closed (or first click), so open it
             return {"display": "block"}, "Portfolio Editor – Click to Close"
 
-
-    # Toggle the setup editor open/closed
     @app.callback(
         Output("setup-collapse-content", "style"),
         Output("setup-collapse-button", "children"),
@@ -124,42 +180,42 @@ def register_editor_callbacks(app):
         prevent_initial_call=True
     )
     def toggle_setup_collapse(n_clicks, current_style):
-        if not n_clicks:
-            raise PreventUpdate
+        """Toggles the visibility and button text of the Setup Editor panel."""
+        # IMPROVEMENT: Use ctx.triggered_id check for robustness
+        if not ctx.triggered or ctx.triggered_id != "setup-collapse-button":
+            return no_update, no_update
+            
         if current_style and current_style.get("display") == "block":
             return {"display": "none"}, "Setup Editor – Click to Open"
         else:
             return {"display": "block"}, "Setup Editor – Click to Close"
 
     # ----------------------------------------------------------------------
-    # UI Transition Callback: Hides setup, reveals main dashboard
+    # 5. UI Transition Callback: Hides setup, reveals main dashboard
     # ----------------------------------------------------------------------
     @app.callback(
-        # Output 1: Hide the initial setup UI
         Output('initial-setup-container', 'style'),
-        # Output 2: Show the main planning UI
         Output('main-planning-ui', 'style'),
-        # Input: Listen to the "Start Planning" button
-        Input('confirm-setup-btn', 'n_clicks'), 
+        Input('confirm-setup-btn', 'n_clicks'),
         prevent_initial_call=True
     )
-    def handle_setup_confirmation(n_clicks):
-        if n_clicks is None or n_clicks == 0:
+    def handle_setup_confirmation(n_clicks: int):
+        """Hides the initial setup screen and displays the main planning UI upon button click."""
+        if not n_clicks:
             raise PreventUpdate
         
-        # When clicked, hide the setup container and display the main UI
         hide_style = {'display': 'none'}
-        show_style = {'display': 'block'} 
+        show_style = {'display': 'block'}
         
         return hide_style, show_style
 
-    # ======================================================================
+   # ======================================================================
     # CURRENCY FORMATTING CALLBACKS (Handles immediate UI reformatting)
     # ======================================================================
 
     # This list must match the IDs of all dcc.Inputs created by pretty_currency_input
     CURRENCY_INPUT_IDS = [
-        "base_annual_spending", 
+        "base_annual_spending",
         "max_roth",
         "travel",
         "gifting",
@@ -173,11 +229,6 @@ def register_editor_callbacks(app):
     # Create a list of Input dependencies dynamically
     CURRENCY_INPUTS = [Input(id, 'value') for id in CURRENCY_INPUT_IDS]
 
-    # If your app object is named 'app', use @app.callback.
-    # This callback is designed to take the string value from the input, 
-    # clean it into a number, and then reformat it back into a nice currency string
-    # and push it back into the input's value, which refreshes the display.
-
     @app.callback(
          CURRENCY_OUTPUTS,
          CURRENCY_INPUTS,
@@ -185,25 +236,36 @@ def register_editor_callbacks(app):
      )
     def format_currency_inputs(*input_values):
         """
-        Cleans raw input values (which might be strings like '$1,234,567') 
-        into floats, and then reformats them back into a clean currency string 
-        to update the UI immediately after the user stops typing (due to debounce=True).
-        This provides instant visual feedback to the user on their input formatting.
+        Cleans raw input values (which might be strings like '$1,234,567')
+        into floats, and then reformats them back into a clean currency string.
+
+        This function runs on initial load (ctx.triggered is empty) and when any
+        of the inputs change.
         """
 
-        ctx = dash.callback_context
+        # Initialize the list of values to be returned (all no_update initially)
+        formatted_values = [no_update] * len(input_values)
 
-        # If no inputs are triggered, return no update for all.
+        # Determine which indices to process
         if not ctx.triggered:
-            return [dash.no_update] * len(input_values)
+            # FIX: On initial load, process ALL input values
+            indices_to_process = range(len(input_values))
+        else:
+            # On subsequent update, only process the triggered input
+            triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            try:
+                # FIX: Correctly find the index using the list of IDs
+                triggered_index = CURRENCY_INPUT_IDS.index(triggered_id)
+                indices_to_process = [triggered_index]
+            except ValueError:
+                # Should not happen, but safe fallback
+                return formatted_values
 
+        for idx in indices_to_process:
+            val = input_values[idx]
 
-        formatted_values = []
-
-        for val in input_values:
             if val is None or val == '':
-                # If empty, let the input remain empty, but don't force an update
-                formatted_values.append(dash.no_update)
+                # If empty, skip processing (it remains no_update)
                 continue
 
             try:
@@ -211,17 +273,53 @@ def register_editor_callbacks(app):
                 numeric_val = clean_currency(val)
 
                 # 2. Format the numeric value back into a pretty currency string
-                # Using :,.0f ensures comma separation for millions (1,000,000)
                 formatted_str = f"${numeric_val:,.0f}"
 
-                # Only update if the current formatted string is different from the input value
-                if formatted_str == str(val):
-                    formatted_values.append(dash.no_update)
-                else:
-                    formatted_values.append(formatted_str)
+                # Only update the value if the formatted string is different from the input value
+                if formatted_str != str(val):
+                    formatted_values[idx] = formatted_str
 
-            except Exception:
-                # If cleaning or formatting fails completely, do not update the input value.
-                formatted_values.append(dash.no_update)
+            except Exception as e:
+                # If cleaning or formatting fails, keep it as no_update
+                print(f"Currency formatting error for ID {CURRENCY_INPUT_IDS[idx]}: {e}")
+                pass
 
         return formatted_values
+
+    # ----------------------------------------------------------------------
+    # 7. Save to XML (Download)
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output("download-xml-portfolio", "data"),
+        Input("save-portfolio-btn", "n_clicks"),
+        State('portfolio-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def save_portfolio_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]]):
+        """Converts the current AG Grid data into an XML string and triggers a file download."""
+        if n_clicks and grid_data:
+            # 1. Convert the list of row data (from AG Grid) back into the dictionary
+            # structure expected by the XML writer.
+            portfolio_dict = {}
+            for row in grid_data:
+                # Create a copy of the row so we can safely mutate it (pop 'name', 'delete')
+                row_copy = row.copy()
+                account_name = row_copy.pop('name') # Get the name which is the dict key
+                row_copy.pop('delete', None)       # Remove the ephemeral 'delete' column
+                
+                # Clean up None values which can cause issues with XML writing
+                cleaned_row = {k: v for k, v in row_copy.items() if v is not None}
+                
+                portfolio_dict[account_name] = cleaned_row
+
+            # 2. Generate the XML content string
+            xml_content = create_portfolio_xml(portfolio_dict)
+
+            # 3. Use dcc.send_data_string to prompt a file download
+            return dcc.send_data_string(
+                xml_content,
+                filename="my_retirement_portfolio.xml",
+                type="text/xml" # Set correct MIME type
+            )
+
+        raise PreventUpdate

@@ -35,11 +35,10 @@ main_layout = html.Div(
         # ----------------------------------------------------------------------
         # ROW 1: Simulation Controls - Portfolio Editor, Slider and Run Button
         # ----------------------------------------------------------------------
-
-        html.Div([
-        # COLUMN 1A: COLLAPSIBLE PORTFOLIO EDITOR
+        html.Div([        
+            # COLUMN 1A: Collapsible Portfolio Editor Button
             html.Button(
-                "Portfolio Editor – Click to Open/Close",
+                "Portfolio Editor – Click to Open",
                 id="portfolio-collapse-button",
                 n_clicks=0,
                 style={
@@ -55,10 +54,9 @@ main_layout = html.Div(
                     'whiteSpace': 'nowrap',
                     'height': '50px',
                     'alignSelf': 'flex-end',
-                    'marginRight': '20px'
                 }
             ),
-
+ 
             # COLUMN 1B: Slider (takes up most of the space)
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
@@ -88,8 +86,8 @@ main_layout = html.Div(
                         'marginBottom': '2px'
                     }
                 ),
-            ], style={'width': '160px', 'flex': 'none'})
-
+            ], style={'width': '160px', 'flex': 'none'}),
+            dcc.Download(id="download-xml-portfolio"),
         ], style={
             'display': 'flex', 
             'alignItems': 'flex-end', 
@@ -104,72 +102,121 @@ main_layout = html.Div(
         # This Div shows/hides based on CSS (starts hidden)
         html.Div(
             id="portfolio-collapse-content",
-            style={'display': 'none'}, 
+            style={'display': 'none'},
             children=[
-                html.Div([
-                    html.Div([
-                        html.Button("Add New Account", id="add-account-btn", n_clicks=0,
-                                     style={'marginRight': '10px', 'backgroundColor': '#27ae60', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
-                        html.Button("Reset to Defaults", id="reset-portfolio-btn", n_clicks=0,
-                                     style={'backgroundColor': '#e74c3c', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
-                        html.Div(id="portfolio-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'})
-                    ], style={'marginBottom': '15px', 'display': 'flex', 'alignItems': 'center'}),
-
-                    dag.AgGrid(
-                        id='portfolio-grid',
-                        columnDefs=[
-                            {"field": "name", "headerName": "Account Name", "editable": False, "pinned": "left", "width": 180},
-                            {"field": "balance", "headerName": "Balance ($)", "type": "rightAligned",
-                             "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
-                             "editable": True},
-                            {"field": "equity", "headerName": "Equity %",
-                             "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
-                             "editable": True},
-                            {"field": "bond", "headerName": "Bond %",
-                             "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
-                             "editable": True},
-                            {"field": "tax", "headerName": "Tax Type", "cellEditor": "agSelectCellEditor",
-                             "cellEditorParams": {"values": ["taxable", "traditional", "roth", "inherited", "trust"]}, "width": 130},
-                            {"field": "owner", "headerName": "Owner", "cellEditor": "agSelectCellEditor",
-                             "cellEditorParams": {"values": ["person1", "person2"]}, "width": 110},
-                            {"field": "basis", "headerName": "Basis ($)",
-                             "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
-                             "editable": True},
-                            {"field": "mandatory_yield", "headerName": "Mand. Yield", "editable": True, "width": 110},
-                            {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
-                     {
-                        "Headername": "Delete",
-                        "field": "delete",
-                        "checkboxSelection": True,
-                        "width": 90,
-                        "pinned": "right",
-                        "sortable": False,
-                        "filter": False,
-                        "headerCheckboxSelection": True,
-                        "headerCheckboxSelectionFilteredOnly": True,
+                # Outer Div to apply styling (border, background, padding) to the entire editor content
+                html.Div(
+                    style={
+                        'padding': '25px',
+                        'border': '2px solid #ddd',
+                        'borderRadius': '12px',
+                        'backgroundColor': '#fff',
+                        'boxShadow': '0 8px 25px rgba(0,0,0,0.1)',
+                        'marginBottom': '30px'
                     },
-                ],
-                        rowData=[{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()],
-                        defaultColDef={
-                            "flex": 1,
-                            "minWidth": 100,
-                            "resizable": True,
-                            "sortable": True,
-                            "filter": True,
-                            "floatingFilter": True
-                        },
-                        dashGridOptions={"rowHeight": 48, "animateRows": False},
-                        style={"height": 550},
-                        className="ag-theme-alpine",
-                    )
-                ], style={
-                    'padding': '25px',
-                    'border': '2px solid #ddd',
-                    'borderRadius': '12px',
-                    'backgroundColor': '#fff',
-                    'boxShadow': '0 8px 25px rgba(0,0,0,0.1)',
-                    'marginBottom': '30px'
-                })
+                    children=[
+                        # Div for the buttons row (1. File/2. Save/3. Add/4. Reset/5. Status)
+                        html.Div([
+                            # 1. Choose XML File (dcc.Upload with inline button)
+                            dcc.Upload(
+                                id='upload-data',
+                                children=html.Button(
+                                    "Choose XML File",
+                                    style={
+                                        'marginRight': '10px',
+                                        'backgroundColor': '#f39c12', # Orange for file selection
+                                        'color': 'white',
+                                        'border': 'none',
+                                        'padding': '10px 20px',
+                                        'borderRadius': '4px',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                                multiple=False,
+                                accept=".xml",
+                                style={'display': 'inline-block', 'marginRight': '10px'}
+                            ),
+
+                            # 2. Save to XML Button
+                            html.Button(
+                                "Save Portfolio to XML",
+                                id="save-portfolio-btn",
+                                n_clicks=0,
+                                style={
+                                    'marginRight': '30px', # Add extra space after Save button
+                                    'backgroundColor': '#2ecc71', # Green for saving
+                                    'color': 'white',
+                                    'border': 'none',
+                                    'padding': '10px 20px',
+                                    'borderRadius': '4px',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+
+                            # 3. Add New Account
+                            html.Button("Add New Account", id="add-account-btn", n_clicks=0,
+                                         style={'marginRight': '10px', 'backgroundColor': '#27ae60', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+
+                            # 4. Reset to Defaults
+                            html.Button("Reset to Defaults", id="reset-portfolio-btn", n_clicks=0,
+                                         style={'backgroundColor': '#e74c3c', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+
+                            # 5. Portfolio Status Div
+                            html.Div(id="portfolio-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'})
+
+                        ], style={'marginBottom': '15px', 'display': 'flex', 'alignItems': 'center'}),
+
+
+                        # dag.AgGrid for Portfolio Editor
+                        dag.AgGrid(
+                            id='portfolio-grid',
+                            columnDefs=[
+                                {"field": "name", "headerName": "Account Name", "editable": False, "pinned": "left", "width": 180},
+                                {"field": "balance", "headerName": "Balance ($)", "type": "rightAligned",
+                                 "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
+                                 "editable": True},
+                                {"field": "equity", "headerName": "Equity %",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
+                                 "editable": True},
+                                {"field": "bond", "headerName": "Bond %",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
+                                 "editable": True},
+                                {"field": "tax", "headerName": "Tax Type", "cellEditor": "agSelectCellEditor",
+                                 "cellEditorParams": {"values": ["taxable", "traditional", "roth", "inherited", "trust"]}, "width": 130},
+                                {"field": "owner", "headerName": "Owner", "cellEditor": "agSelectCellEditor",
+                                 "cellEditorParams": {"values": ["person1", "person2"]}, "width": 110},
+                                {"field": "basis", "headerName": "Basis ($)",
+                                 "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
+                                 "editable": True},
+                                {"field": "mandatory_yield", "headerName": "Mand. Yield", "editable": True, "width": 110},
+                                {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
+                                {
+                                    "headerName": "Delete", # Corrected from 'Headername'
+                                    "field": "delete",
+                                    "checkboxSelection": True,
+                                    "width": 90,
+                                    "pinned": "right",
+                                    "sortable": False,
+                                    "filter": False,
+                                    "headerCheckboxSelection": True,
+                                    "headerCheckboxSelectionFilteredOnly": True,
+                                },
+                            ],
+                            rowData=[{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()],
+                            defaultColDef={
+                                "flex": 1,
+                                "minWidth": 100,
+                                "resizable": True,
+                                "sortable": True,
+                                "filter": True,
+                                "floatingFilter": True
+                            },
+                            dashGridOptions={"rowHeight": 48, "animateRows": False},
+                            style={"height": 550},
+                            className="ag-theme-alpine",
+                        )
+                    ]
+                )
             ]
         ),
 
