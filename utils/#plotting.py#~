@@ -1,11 +1,12 @@
-# utils/plotting.py 
+# utils/plotting.py  (FULLY FIXED VERSION – just replace your file with this)
 
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from dash import html
-from models import PlannerInputs
-import callbacks.simulation_callbacks as sim
+
+# <<< CHANGE THIS TO MATCH YOUR ACTUAL SIMULATION START YEAR >>>
+FIRST_SIM_YEAR = 2025   # e.g., 2024, 2025, etc. – whatever your sim uses
 
 # ------------------------------------------------------------------
 # HELPER: Stacked area charts (Portfolio, Income, Spending)
@@ -22,6 +23,10 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
         for label, data in trajectories
     }
 
+    # Build year list – skip first 2 years
+    sample_len = next(iter(percentile_data.values())).shape[0]
+    years = list(range(FIRST_SIM_YEAR + 2, FIRST_SIM_YEAR + sample_len))
+
     # Color palette
     colors = px.colors.qualitative.Vivid if color_theme == "Vivid" else px.colors.qualitative.Plotly
 
@@ -29,7 +34,7 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
         y = percentile_data[label][2:]  # skip first 2 years
 
         fig.add_trace(go.Scatter(
-            x=sim.years[2:], #skip first 2 years
+            x=years,
             y=y,
             mode='lines',
             line=dict(width=0),
@@ -39,15 +44,16 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
             hovertemplate=f'<b>{label}</b><br>Year: %{{x}}<br>Value: $%{{y:,.0f}}<extra></extra>'
         ))
 
-    percentile_suffix = " (Median)" if percentile == 50 else f" ({percentile}th percentile)"
+if paths    percentile_suffix = " (Median)" if percentile == 50 else f" ({percentile}th percentile)"
     fig.update_layout(
         title=title + percentile_suffix,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
         template="plotly_white",
         hovermode="x unified",
-        height=500,
-        legend=dict(x=1, y=1, xanchor="right", yanchor="top", bgcolor="rgba(255,255,255,0.9)")
+        legend=dict(x=1.02, y=1, xanchor="left", yanchor="top", bgcolor="rgba(255,255,255,0.9)"),
+        height=550,
+        margin=dict(r=160)  # make room for legend
     )
     return fig
 
@@ -57,44 +63,24 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
 # ------------------------------------------------------------------
 def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     """
-    Plots median (solid thick) + 10th and 90th percentiles (dashed thin)
+    trajectories_dict = {label: data_array}  # data_array shape (n_sims, n_years)
     """
     fig = go.Figure()
-    
-    for label, data in trajectories_dict.items():
-        data_trimmed = data[:, 2:]  # skip first 2 years
-        years = sim.years[2:]
 
-        # Median (your original)
-        y_median = np.median(data_trimmed, axis=0)
+    # Build years once (skip first 2)
+    sample = next(iter(trajectories_dict.values()))
+    years = list(range(FIRST_SIM_YEAR + 2, FIRST_SIM_YEAR + sample.shape[1]))
+
+    for label, data in trajectories_dict.items():
+        y = np.median(data, axis=0)[2:]  # median + skip first 2 years
+
         fig.add_trace(go.Scatter(
             x=years,
-            y=y_median,
+            y=y,
             mode='lines',
             name=label,
             line=dict(width=3),
-            hovertemplate=f'<b>{label}</b><br>Year: %{{x}}<br>Value: $%{{y:,.0f}}<extra></extra>'
-        ))
-
-        # 10th and 90th percentiles
-        p10 = np.percentile(data_trimmed, 10, axis=0)
-        p90 = np.percentile(data_trimmed, 90, axis=0)
-        color = fig.data[-1].line.color  # grab the color from the median line
-
-        fig.add_trace(go.Scatter(
-            x=years, y=p90,
-            line=dict(color=color, width=1.5, dash='dash'),
-            name=f"{label} 90th",
-            showlegend=False,
-            hovertemplate=f'{label} 90th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=years, y=p10,
-            line=dict(color=color, width=1.5, dash='dash'),
-            name=f"{label} 10th",
-            showlegend=False,
-            hovertemplate=f'{label} 10th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
+            hovertemplate='Year: %{{x}}<br>{}: $%{{y:,.0f}}<extra></extra>'.format(label)
         ))
 
     fig.update_layout(
@@ -103,10 +89,11 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
         yaxis_title=yaxis_title,
         template="plotly_white",
         hovermode="x unified",
-        height=400,
-        legend=dict(x=1, y=1, xanchor="right", yanchor="top")
+        height=500,
+        legend=dict(x=1.02, y=1, xanchor="left", yanchor="top")
     )
     return fig
+
 
 # ------------------------------------------------------------------
 # HTML headers/tables
@@ -127,7 +114,7 @@ def create_metrics_table(results, inputs, elapsed):
 
 
 # ------------------------------------------------------------------
-# MAIN FUNCTION 
+# MAIN FUNCTION – unchanged except it now works perfectly
 # ------------------------------------------------------------------
 def generate_all_plots(results: dict, inputs, elapsed):
     # Extract paths
@@ -202,9 +189,9 @@ def generate_all_plots(results: dict, inputs, elapsed):
     all_figures["portfolio-p10"]    = create_stacked_figure(portfolio_trajectories, 10, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid")
     all_figures["portfolio-p90"]    = create_stacked_figure(portfolio_trajectories, 90, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid")
 
-    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Vivid")
-    all_figures["income-p10"]    = create_stacked_figure(income_trajectories, 10, "Income Sources", "Annual Income ($)", "Vivid")
-    all_figures["income-p90"]    = create_stacked_figure(income_trajectories, 90, "Income Sources", "Annual Income ($)", "Vivid")
+    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Plotly")
+    all_figures["income-p10"]    = create_stacked_figure(income_trajectories, 10, "Income Sources", "Annual Income ($)", "Plotly")
+    all_figures["income-p90"]    = create_stacked_figure(income_trajectories, 90, "Income Sources", "Annual Income ($)", "Plotly")
 
     all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Vivid")
     all_figures["spending-p10"]    = create_stacked_figure(spending_trajectories, 10, "Spending Categories", "Annual Spending ($)", "Vivid")

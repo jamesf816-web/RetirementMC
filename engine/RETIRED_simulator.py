@@ -3,9 +3,10 @@ import pandas as pd
 import copy
 import math
 
+from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+
 from config.expense_assumptions import *
 from config.market_assumptions import *
-from config.default_portfolio import *
 
 from models import PlannerInputs
 
@@ -20,7 +21,9 @@ class RetirementSimulator:
         self.inputs = inputs
         for field, value in inputs.__dict__.items():
             setattr(self, field, value)
-            
+
+        self._normalize_accounts()
+
         self.portfolio_paths = None
         self.conversion_paths = None
         self.account_paths = None
@@ -71,7 +74,33 @@ class RetirementSimulator:
         self.long_term_inflation_sigma = long_term_inflation_sigma
 
         self.corr_matrix = corr_matrix
+        
+    def _normalize_accounts(self):
+        if not self.accounts:
+                return
 
+        for name, acct in self.accounts.items():
+            # --- Fix balance ---
+            bal = acct.get("balance", 0)
+            if bal is None or bal == "" or str(bal).strip() == "":
+                bal = 0.0
+            else:
+                try:
+                    bal = float(str(bal).replace("$", "").replace(",", "").strip())
+                except:
+                    bal = 0.0
+            acct["balance"] = float(bal)
+
+            # --- Fix basis (critical for taxable accounts!) ---
+            basis = acct.get("basis")
+            if basis is None or basis == "" or str(basis).strip() == "":
+                acct["basis"] = bal          # assume full basis if blank
+            else:
+                try:
+                    acct["basis"] = float(str(basis).replace("$", "").replace(",", "").strip())
+                except:
+                    acct["basis"] = bal
+ 
     def generate_returns(self, n_full):
         """Generate Monte Carlo equity, bond, and inflation returns."""
         def mr_params(i_mu, lt_mu, i_sig, lt_sig, half_life=10):
@@ -205,8 +234,116 @@ class RetirementSimulator:
                remaining -= withdraw_amt
 
         return ordinary_income, ltcg_income
+    # In RetirementSimulator class within simulator.py
 
+def _get_withdrawal_plan(self, withdrawal_needed: float, current_portfolio: dict) -> Dict[str, float]:
+    """
+    Determines the withdrawal amount from each account based on user-defined
+    withdrawal_group and drawdown_strategy, or system defaults.
 
+    Args:
+        withdrawal_needed: The total amount of cash required for the period.
+        current_portfolio: The current state of the portfolio (dict of account dicts).
+
+    Returns:
+        A dictionary mapping account names to final withdrawal amounts.
+    """
+    if withdrawal_needed <= 0:
+        return {}
+
+    # 1. Define Default System Priority for Tax Types
+    # Lower number = Higher priority (e.g., RMDs come first, Roth comes last)
+    DEFAULT_TAX_PRIORITY = {
+        'rmd': 1, 'mandatory_yield': 1, 'def457b': 1, # System-required distributions
+        'taxable': 2, 'trust': 2,                     # Taxable/Trust (User can choose to balance)
+        'traditional': 3,                             # Tax-deferred
+        'roth': 4,                                    # Tax-free 
+        'hsa': 5,                                     # Tax-free Health Savings Account (lowest priority)
+        'other': 99                                   # catch all
+    }
+
+    # 2. Group accounts by priority (using user-defined or default group ID)
+    withdrawal_groups = {}
+    for name, acct in current_portfolio.items():
+        # Use user-defined 'withdrawal_group' or fall back to system default
+        group_id = acct.get('withdrawal_group', DEFAULT_TAX_PRIORITY.get(acct.get('tax', 'other'), 99))
+        
+        if group_id not in withdrawal_groups:
+            withdrawal_groups[group_id] = []
+        
+        # Store necessary details for processing
+        withdrawal_groups[group_id].append({
+            'name': name,
+            'balance': acct['balance'],
+            # Default to 'proportional' if not set
+            'strategy': acct.get('drawdown_strategy', 'proportional').lower() 
+        })
+
+    # Sort groups by ID (lowest number is highest priority)
+    sorted_groups = sorted(withdrawal_groups.keys())
+
+    # 3. Iterate through groups and allocate withdrawals
+    withdrawal_plan = {}
+    remaining_needed = withdrawal_needed
+
+    for group_id in sorted_groups:
+        if remaining_needed <= 0:
+            break
+            
+        accounts_in_group = withdrawal_groups[group_id]
+        
+        # Sanity check: Total available balance in this group
+        group_balance = sum(a['balance'] for a in accounts_in_group)
+        if group_balance <= 0:
+            continue
+
+        # Amount to try to pull from this group
+        amount_to_pull = min(remaining_needed, group_balance)
+        strategy = accounts_in_group[0]['strategy']
+        
+        if strategy == 'drain_first':
+            # For 'drain_first', process in the order they were defined (XML order or arbitrary)
+            # Sorting by name ensures deterministic behavior if XML order is not guaranteed
+            accounts_in_group.sort(key=lambda x: x['name'])
+            
+            for acct in accounts_in_group:
+                if amount_to_pull <= 0:
+                    break
+                
+                # Withdraw up to the remaining amount needed or the account balance
+                withdraw_amount = min(amount_to_pull, acct['balance'])
+                withdrawal_plan[acct['name']] = withdraw_amount
+                
+                # Update remaining amounts
+                amount_to_pull -= withdraw_amount
+                remaining_needed -= withdraw_amount
+                
+        elif strategy == 'proportional':
+            # Proportional drawdown based on balance
+            current_group_balance = group_balance # Use the total balance available in the group
+            
+            for acct in accounts_in_group:
+                if remaining_needed <= 0:
+                    break
+                    
+                proportion = acct['balance'] / current_group_balance
+                
+                # Proportional share of the required amount for this group, capped by balance
+                # Note: We use amount_to_pull (the total we need from this group) for the base calculation
+                withdraw_amount = min(
+                    amount_to_pull * proportion,
+                    acct['balance']
+                )
+                
+                withdrawal_plan[acct['name']] = withdraw_amount
+                remaining_needed -= withdraw_amount
+                
+    # In case of remaining_needed > 0, the next step in the main simulation 
+    # should handle the failure or adjust spending.
+
+    return withdrawal_plan
+
+    
     def run_simulation(self):
         """
         Run the Monte Carlo retirement simulation.
@@ -224,7 +361,7 @@ class RetirementSimulator:
         account_names = list(self.accounts.keys())
 
         n_full = n_years_sim + 2 # need two years prior MAGI for IRMAA
-        n_sims = self.nsims
+        n_sims = int(self.nsims)
         self.portfolio_paths = np.zeros((n_sims, n_full))
         self.account_paths = {name: np.zeros((n_sims, n_full)) for name in account_names}
         self.magi_paths = np.zeros((n_sims, n_full)) #need to start MAGI 2 years early
@@ -391,7 +528,7 @@ class RetirementSimulator:
                 person1_benefit = 0.0
                 person2_benefit = 0.0
 
-                self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} year = {year} {self.ss_fail_year} {self.ss_fail_percent} \n")
+                #self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} year = {year} {self.ss_fail_year} {self.ss_fail_percent} \n")
                 # Decrease benfits if modeling SS Truct Fund failure
                 if year > self.ss_fail_year:
                     person1_ss *= (1 - self.ss_fail_percent)
@@ -407,7 +544,7 @@ class RetirementSimulator:
 
                 # Make adjustments for starting benefits befpre or after FRA
                 person1_own = person1_ss * self.get_ss_multiplier(self.person1_birth_year, self.person1_ss_age_years, self.person1_ss_age_months)
-                person2_own = person1_ss * self.get_ss_multiplier(self.person2_birth_year, self.person2_ss_age_years, self.person2_ss_age_months)
+                person2_own = person2_ss * self.get_ss_multiplier(self.person2_birth_year, self.person2_ss_age_years, self.person2_ss_age_months)
 
                 #self.debug_log.append(f"person1_ss = ${person1_ss:,.2f} person1_own = ${person1_own:,.2f} year = {year} \n")
 
@@ -427,7 +564,7 @@ class RetirementSimulator:
                         month = self.person2_birth_month + self.person2_ss_age_months
                         months = 12 - month
                         inflation_index_start_person2 = inflation_index[year_idx]
-                    cola_multiplier = inflation_index[year_idx] / inflation_index_start_person1
+                    cola_multiplier = inflation_index[year_idx] / inflation_index_start_person2
                     person2_own = person2_ss * cola_multiplier
                     person2_benefit = months * max(person2_own, 0.5 * person2_spousal) #take higher of own or spousal benefit
 
@@ -1058,7 +1195,7 @@ class RetirementSimulator:
         portfolio_end = self.portfolio_paths[:, -1]
         success_rate = np.mean(portfolio_end > threshold) * 100
         minimum_annual_balance = np.min(self.portfolio_paths, axis=1)
-        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold) *100
+        avoid_ruin_rate = np.mean(minimum_annual_balance > threshold) * 100
         
 
         result = {

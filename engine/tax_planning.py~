@@ -1,0 +1,120 @@
+# tax_planning.py
+#
+# Used for estimated taxes.  Seperate tax_engine.py does final tyear end taxes correctly.
+#
+
+import copy
+# Assuming get_current_brackets lives in engine.tax_utils
+from utils.tax_utils import get_current_brackets 
+from typing import Tuple, Dict
+
+def estimate_taxable_gap(
+    cash_needed: float, 
+    accounts: Dict, 
+    accounts_bal: Dict, 
+    withdrawal_order: list[str],
+    filing_status: str
+) -> Tuple[float, float]:
+    """
+    Estimates the ordinary income and LTCG income resulting from a portfolio 
+    withdrawal of `cash_needed`, following the withdrawal priority.
+    
+    This function is a 'dry run' used for estimating taxes *before* a final withdrawal
+    is executed or taxes are calculated.
+    
+    Args:
+        cash_needed: The total cash amount to withdraw from the portfolio.
+        accounts: The dictionary of account definitions (includes basis, owner, etc.).
+        accounts_bal: The dictionary of current account balances.
+        withdrawal_order: The strategic priority list (e.g., ["taxable", "traditional", ...]).
+        
+    Returns:
+        tuple[float, float]: (ordinary_income, ltcg_income)
+    """
+    ordinary_income = 0.0
+    ltcg_income = 0.0
+    remaining = cash_needed
+    
+    # Use a copy of balances so the function doesn't modify the main simulation state
+    est_tax_bal = accounts_bal.copy()
+
+    for acct_type in withdrawal_order:
+       # Find accounts matching this type (must match the logic in the simulator loop)
+       target_accounts = [name for name, acct in accounts.items() if acct["tax"] == acct_type]
+       
+       for acct_name in target_accounts:
+           acct = accounts[acct_name]
+           if remaining <= 0:
+               break
+
+           acct_balance = est_tax_bal.get(acct_name, 0.0)
+           if acct_balance <= 0:
+               continue
+               
+           withdraw_amt = min(acct_balance, remaining)
+           
+           # --- Taxable Income Characterization ---
+           if acct_type == "taxable":
+               # Replicate the gain calculation logic exactly from the simulator's loop
+               # This requires careful state management, relying on the basis stored in `accounts`.
+               original_balance = acct.get("balance", acct_balance) 
+               current_gain = max(0, original_balance - acct.get("basis", 0.0))
+               
+               if original_balance > 0 and current_gain > 0:
+                   gain_percentage = current_gain / original_balance
+                   realized_gains = withdraw_amt * gain_percentage
+               else:
+                   realized_gains = 0.0
+                   
+               # Split gains between ordinary and LTCG
+               ordinary_part = realized_gains * acct.get("ordinary_pct", 0.1)
+               ltcg_part = realized_gains - ordinary_part
+               ordinary_income += ordinary_part
+               ltcg_income += ltcg_part
+               
+           elif acct_type in ["inherited", "traditional", "def457b"]:
+               # Tax-deferred draws are 100% ordinary income
+               ordinary_income += withdraw_amt
+               
+           # ROTH and Trust Principle draws generate no income for tax purposes
+
+           # Update estimated balance and remaining need
+           est_tax_bal[acct_name] -= withdraw_amt
+           remaining -= withdraw_amt
+
+    return ordinary_income, ltcg_income
+
+# --------------------------------------------------
+
+def get_tax_planning_targets(year: int, inflation_this_year: float, tax_strategy: str, irmaa_strategy: str, filing_status: str) -> Tuple[float, float]:
+    """
+    Determines the target tax bracket ceiling and IRMAA threshold based on 
+    user-defined strategies for the current year.
+    """
+    
+    # get_current_brackets is assumed to exist in engine.tax_utils and returns 
+    # the necessary bracket ceilings and IRMAA thresholds.
+    brackets, _, thresholds = get_current_brackets(year, inflation_this_year, filing_status) 
+
+    fill_targets = {
+        "fill_12_percent": brackets[1][1],
+        "fill_22_percent": brackets[2][1],
+        "fill_24_percent": brackets[3][1],
+        "fill_32_percent": brackets[4][1],
+    }
+    fill_thresholds = {
+        "fill_IRMAA_1": thresholds[1],
+        "fill_IRMAA_2": thresholds[2],
+        "fill_IRMAA_3": thresholds[3],
+        "fill_IRMAA_4": thresholds[4],
+    }
+    
+    # Apply tax strategy - fill a tax bracket
+    # Use float('inf') as default if strategy is not found
+    tax_target = fill_targets.get(tax_strategy, float('inf')) 
+
+    # Apply IRMAA threshold 
+    irmaa_target = fill_thresholds.get(irmaa_strategy, float('inf'))
+    
+    # The actual planning target is the minimum of the two constraints
+    return tax_target, irmaa_target
