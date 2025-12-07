@@ -61,7 +61,7 @@ main_layout = html.Div(
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
                 dcc.Slider(
-                    id='nsims', min=100, max=30000, step=1000, value=1000,
+                    id='nsims', min=1, max=30000, step=1000, value=1,
                     marks={i: f"{i//1000}k" for i in range(0, 31000, 5000)},
                     tooltip={"placement": "bottom", "always_visible": True},
                 ),

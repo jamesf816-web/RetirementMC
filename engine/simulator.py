@@ -6,43 +6,18 @@ from typing import List, Dict, Tuple, Any
 
 from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
 
-# FIXED: Explicitly importing constants from the assumption files
-from config.expense_assumptions import (
-    medicare_start_age,
-    medicare_part_b_base_2026,
-    medicare_supplement_annual,
-    mortgage_payoff_year,
-    mortgage_monthly_until_payoff,
-    property_tax_and_insurance,
-    car_replacement_cycle,
-    car_cost_today,
-    car_inflation,
-    lumpy_expenses,
-    irmaa_brackets_start_year,
-    home_repair_prob, 
-    home_repair_mean, 
-    home_repair_shape,
-)
-from config.market_assumptions import (
-    initial_inflation_mu,
-    initial_inflation_sigma,
-    long_term_inflation_mu,
-    long_term_inflation_sigma,
-    years_to_revert,
-    initial_equity_mu,
-    initial_equity_sigma,
-    initial_bond_mu,
-    initial_bond_sigma,
-    corr_matrix,
-)
-
 from models import PlannerInputs
+
+from config.expense_assumptions import *
+from config.market_assumptions import *
 
 from engine.rmd_tables import get_rmd_factor
 from engine.def457b_tables import get_def457b_factor
 from engine.roth_optimizer import optimal_roth_conversion
-from engine.tax_engine import calculate_taxes
-
+from engine.tax_planning import *
+from engine.tax_engine import *
+from engine.market_generator import *
+from engine.income_calculator import *
 
 class RetirementSimulator:
     """
@@ -55,51 +30,16 @@ class RetirementSimulator:
         # Set all input fields as class attributes
         for field, value in inputs.__dict__.items():
             setattr(self, field, value)
-
-        # --- ROBUSTNESS CHECK FOR CORE SIMULATION PARAMETERS ---
-        # Ensure critical attributes are set, providing defaults if missing from PlannerInputs
-        if not hasattr(self, 'current_year') or self.current_year is None:
-            self.current_year = 2025 
-        if not hasattr(self, 'end_year') or self.end_year is None:
-            # Calculate end year based on end_age (assuming end_age is in PlannerInputs)
-            end_age = getattr(self, 'end_age', 95)
-            self.end_year = self.current_year + (end_age - (self.current_year - self.person1_birth_year))
-            
-        # FIX: Ensure nsims is set (it's the correct parameter name from models.py)
-        if not hasattr(self, 'nsims') or self.nsims is None:
-            self.nsims = 100 # Default to 100 paths
-            
-        if not hasattr(self, 'filing_status') or self.filing_status is None:
-            self.filing_status = "married_joint"
-        
-        if not hasattr(self, 'state_of_residence') or self.state_of_residence is None:
-            self.state_of_residence = "VA"
-
-        if not hasattr(self, 'target_portfolio_value') or self.target_portfolio_value is None:
-             self.target_portfolio_value = 1000000.0
              
-        COMMON_ACCOUNT_DEFAULTS = {
-            "Roth": {"tax": "exempt", "owner": "person1"},
-            "Traditional": {"tax": "deferred", "owner": "person1"},
-            "Taxable": {"tax": "taxable", "owner": "joint"},
-        }
-        
         # Use the inputs.accounts dictionary which plotting.py references for metadata
         accounts_dict = self.inputs.accounts 
 
-        for name, defaults in COMMON_ACCOUNT_DEFAULTS.items():
-            if name not in accounts_dict:
-                accounts_dict[name] = {}
-            
-            # Ensure the critical 'tax' and 'owner' keys are present
-            accounts_dict[name].setdefault("tax", defaults["tax"])
-            accounts_dict[name].setdefault("owner", defaults["owner"])
-            
         self._normalize_accounts() 
 
         # Initialize ages based on birth year
-        self.person1_age = self.current_year - self.person1_birth_year
-        self.person2_age = self.current_year - self.person2_birth_year if self.person2_birth_year is not None else None
+        self.current_age_p1 = self.current_year - self.person1_birth_year
+        self.current_age_p2 = self.current_year - (self.person2_birth_year or self.person1_birth_year) # don't allow None
+        self.num_years = self.end_age - min(self.current_age_p1, self.current_age_p2)
         
         # Initialize storage arrays 
         self.portfolio_paths = None
@@ -128,8 +68,8 @@ class RetirementSimulator:
     # =========================================================================
     def run_simulation(self):
         """Runs the Monte Carlo simulation over all paths."""
-        num_years = self.end_year - self.current_year + 1
-        num_paths = self.nsims 
+        num_paths = self.nsims
+        num_years = self.num_years
         
         # Initialize storage arrays (restored based on original snippet)
         self.portfolio_paths = np.zeros((num_paths, num_years))
@@ -160,25 +100,26 @@ class RetirementSimulator:
     def _run_one_path(self, path_index: int):
         """Runs a single simulation path."""
         
+        print(f">>> STARTING PATH {path_index} <<<")
+        
         # Initialize state for this path
         current_accounts = copy.deepcopy(self.initial_accounts)
         
         # Initialize path-specific history arrays
         # MAGI history needs to be long enough to track 2 years prior for IRMAA (index offset)
-        num_years = self.end_year - self.current_year + 1
-        magi_path = [0.0] * 2 + [0.0] * num_years
+        magi_path = [0.0] * 2 + [0.0] * self.num_years
         
         market_path = self._generate_market_path()
         inflation_path = self._generate_inflation_path()
         
-        for i in range(num_years):
+        for i in range(self.num_years):
             year_index = i
             current_year = self.current_year + i
             current_inflation_index = inflation_path[i]
             
             # Update ages
-            current_age_person1 = self.person1_age + i
-            current_age_person2 = self.person2_age + i if self.person2_age is not None else None
+            current_age_person1 = self.current_age_p1 + i
+            current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else None
             
             # --- STEP 1: CALCULATE ANNUAL INCOME AND RMDs ---
             
@@ -270,85 +211,157 @@ class RetirementSimulator:
 
 
     # =========================================================================
-    # 3. UTILITY FUNCTIONS (Restored to their original/placeholder form)
+    # 3. UTILITY FUNCTIONS — Modular Wiring Only
     # =========================================================================
-    
+
     def _normalize_accounts(self):
-        """Initializes account structure if missing fields are found."""
-        if not hasattr(self, 'accounts') or not self.accounts:
-            self.initial_accounts = DEFAULT_ACCOUNTS
-        else:
-            self.initial_accounts = self.accounts
-        
-        # Ensure all accounts have a 'balance' key
-        for name, acct in self.initial_accounts.items():
-            acct.setdefault('balance', 0.0)
-            acct.setdefault('basis', 0.0) # Used for taxable gains calculation
+        """Ensure account dicts have required fields."""
+        self.initial_accounts = copy.deepcopy(self.inputs.accounts)
+        for acct in self.initial_accounts.values():
+            acct.setdefault("balance", 0.0)
+            acct.setdefault("basis", 0.0)
+            acct.setdefault("tax", "traditional")
+            acct.setdefault("owner", "person1")
+            acct.setdefault("start_age", 60)
+            acct.setdefault("drawdown_years", 5)
+            acct.setdefault("mandatory_yield", 0.0)
+            acct.setdefault("ordinary_pct", 0.1)
 
     def _get_total_portfolio(self, accounts: Dict) -> float:
-        """Calculates total portfolio value."""
-        return sum(acct.get('balance', 0.0) for acct in accounts.values())
+        return sum(acct.get("balance", 0.0) for acct in accounts.values())
 
     def _generate_market_path(self) -> List[float]:
-        """Generates a sequence of annualized portfolio returns for one path."""
-        num_years = self.end_year - self.current_year + 1
-        # Complex logic using corr_matrix, initial_equity_mu, etc. would go here.
-        # Returning a simplified random walk for compilation/execution
-        return np.random.normal(0.06, 0.12, num_years)
+        """One path of annual portfolio returns using market_generator."""
+        eq_q, bond_q, _ = generate_returns(
+            n_full=self.num_years,
+            nsims=1,
+            corr_matrix=corr_matrix,
+            initial_equity_mu=initial_equity_mu,
+            long_term_equity_mu=long_term_equity_mu,
+            initial_equity_sigma=initial_equity_sigma,
+            long_term_equity_sigma=long_term_equity_sigma,
+            initial_bond_mu=initial_bond_mu,
+            long_term_bond_mu=long_term_bond_mu,
+            initial_bond_sigma=initial_bond_sigma,
+            long_term_bond_sigma=long_term_bond_sigma,
+            initial_inflation_mu=initial_inflation_mu,
+            long_term_inflation_mu=long_term_inflation_mu,
+            initial_inflation_sigma=initial_inflation_sigma,
+            long_term_inflation_sigma=long_term_inflation_sigma,
+        )
+        # 70/30 blend → annual returns
+        annual = 0.7 * eq_q[0, ::4] + 0.3 * bond_q[0, ::4]
+        return annual.tolist()
 
     def _generate_inflation_path(self) -> List[float]:
-        """Generates the cumulative inflation index for one path."""
-        num_years = self.end_year - self.current_year + 1
-        # Complex logic using long_term_inflation_mu, years_to_revert, etc. would go here.
-        # Returning a simplified cumulative index
-        inflation_rates = np.random.normal(0.03, 0.01, num_years)
-        return np.cumprod(1 + inflation_rates)
+        """One path of cumulative inflation index."""
+        _, _, infl_q = generate_returns(
+            n_full=self.num_years,
+            nsims=1,
+            corr_matrix=corr_matrix,
+            initial_equity_mu=initial_equity_mu,
+            long_term_equity_mu=long_term_equity_mu,
+            initial_equity_sigma=initial_equity_sigma,
+            long_term_equity_sigma=long_term_equity_sigma,
+            initial_bond_mu=initial_bond_mu,
+            long_term_bond_mu=long_term_bond_mu,
+            initial_bond_sigma=initial_bond_sigma,
+            long_term_bond_sigma=long_term_bond_sigma,
+            initial_inflation_mu=initial_inflation_mu,
+            long_term_inflation_mu=long_term_inflation_mu,
+            initial_inflation_sigma=initial_inflation_sigma,
+            long_term_inflation_sigma=long_term_inflation_sigma,
+        )
+        cumulative = [1.0]
+        for y in range(self.num_years):
+            q_rates = infl_q[0, y*4:(y+1)*4]
+            ann_rate, _ = calculate_annual_inflation(q_rates, cumulative[-1])
+            cumulative.append(cumulative[-1] * (1 + ann_rate))
+        return cumulative[1:]  # drop year 0 = 1.0
 
-    def _get_social_security_benefit(self, year: int, inflation_index: float) -> float:
-        """Calculates the total SS benefit for the year."""
-        # This needs to incorporate self.person1_ss_fra, self.person2_ss_fra, etc.
-        return 0.0 
+    def _get_social_security_benefit(self, current_year: int, inflation_index: float) -> float:
+        return calculate_ss_benefit(
+            ages_person1=np.array([self.current_age_p1 + i for i in range(self.num_years)]),
+            ages_person2=np.array([self.current_age_p2 + i for i in range(self.num_years)]),
+            person1_ss_age_years=self.person1_ss_age_years,
+            person1_ss_age_months=self.person1_ss_age_months,
+            person1_birth_month=self.person1_birth_month,
+            person1_ss_fra=self.person1_ss_fra,
+            person1_birth_year=self.person1_birth_year,
+            person2_ss_age_years=self.person2_ss_age_years,
+            person2_ss_age_months=self.person2_ss_age_months,
+            person2_birth_month=self.person2_birth_month,
+            person2_ss_fra=self.person2_ss_fra,
+            person2_birth_year=self.person2_birth_year,
+            ss_fail_year=self.ss_fail_year,
+            ss_fail_percent=self.ss_fail_percent,
+            inflation_index=np.array([inflation_index]),
+            year=current_year,
+            year_idx=current_year - self.current_year,
+            get_ss_multiplier_func=self._get_ss_multiplier,  # you already have this somewhere
+        )
 
     def _calculate_taxable_ss(self, ss_benefit: float, AGI: float) -> Tuple[float, float]:
-        """Calculates taxable and non-taxable portions of SS benefit."""
-        # Requires complex Provisional Income calculation logic
-        return ss_benefit * 0.85, ss_benefit * 0.15 
+        taxable = calculate_taxable_ss_portion(ss_benefit)
+        return taxable, ss_benefit - taxable
 
     def _calculate_rmds(self, accounts: Dict, age1: int, age2: int, year: int) -> float:
-        """Calculates and returns total RMD income."""
-        # Requires RMD table lookup using get_rmd_factor
-        return 0.0
+        rmd_total = 0.0
+        for name, acct in accounts.items():
+            if acct.get("tax") not in ["traditional", "inherited"]:
+                continue
+            bal = acct.get("balance", 0.0)
+            owner_age = age1 if acct.get("owner") == "person1" else age2
+            factor = get_rmd_factor(owner_age, year)
+            if factor > 0:
+                rmd = bal / factor
+                acct["balance"] -= rmd
+                rmd_total += rmd
+        return rmd_total
 
-    def _get_pension_benefit(self, year: int, inflation_index: float) -> float:
-        """Calculates pension income."""
-        return 0.0
+    def _get_pension_benefit(self, current_year: int, inflation_index: float) -> float:
+        return calculate_pension_income(
+            ages_person1=np.array([self.current_age_p1 + i for i in range(self.num_years)]),
+            ages_person2=np.array([self.current_age_p2 + i for i in range(self.num_years)]),
+            person1_pension_age_years=self.person1_pension_age_years,
+            person1_birth_month=self.person1_birth_month,
+            person1_pension_age_months=self.person1_pension_age_months,
+            person1_pension_amount=self.person1_pension_amount,
+            person2_pension_age_years=self.person2_pension_age_years,
+            person2_birth_month=self.person2_birth_month,
+            person2_pension_age_months=self.person2_pension_age_months,
+            person2_pension_amount=self.person2_pension_amount,
+            year_idx=current_year - self.current_year,
+        )
 
-    def _get_def457b_income(self, year: int, inflation_index: float) -> float:
-        """Calculates 457b income."""
-        # Requires def457b_tables.get_def457b_factor
-        return 0.0
+    def _get_def457b_income(self, current_year: int, inflation_index: float) -> float:
+        _, def457b_draw, _ = calculate_mandatory_account_draws(
+            accounts_bal={k: v.get("balance", 0.0) for k, v in self.initial_accounts.items()},
+            accounts_def=self.initial_accounts,
+            year=current_year,
+            birth_years={"person1": self.person1_birth_year, "person2": self.person2_birth_year},
+            get_def457b_factor_func=get_def457b_factor,
+        )
+        return def457b_draw
 
-    def _get_cash_needed(self, year: int, inflation_index: float) -> float:
-        """Calculates annual spending including base, mortgage, and lumpy expenses."""
-        # This needs to incorporate the imported expense assumptions
-        base_spending = getattr(self, 'base_annual_spending', 50000.0)
-        return base_spending * inflation_index
+    def _get_cash_needed(self, current_year: int, inflation_index: float) -> float:
+        base = self.base_annual_spending * inflation_index
+        # Add travel, gifting, lumpy, etc. here when ready
+        return base + self.travel + self.gifting
 
     def _get_withdrawal_order(self, year: int) -> List[str]:
-        """Returns the strategic withdrawal order (e.g., Taxable, Traditional, Roth)."""
-        return ["Taxable", "Traditional", "Roth"]
+        return ["taxable", "trust", "inherited", "traditional", "roth"]
 
     def _execute_withdrawals(self, accounts: Dict, amount: float, order: List[str]) -> Tuple[float, float]:
-        """Executes withdrawals and tracks realized taxable income."""
-        # This function should be robust and use the logic from tax_planning.estimate_taxable_gap
-        # but must also update the accounts in place.
-        return 0.0, 0.0 # (ordinary_income, ltcg_income)
+        engine = AccountsIncomeEngine(...)  # or inject via __init__ if preferred
+        result = engine._withdraw_from_hierarchy(amount, accounts, order)
+        return result["ordinary_inc"], result["ltcg_inc"]
 
     def _apply_market_returns(self, accounts: Dict, market_return: float):
-        """Applies market growth to all account balances."""
-        for acct_name, acct_data in accounts.items():
-            if 'balance' in acct_data:
-                 acct_data['balance'] *= (1 + market_return)
+        for acct in accounts.values():
+            if "balance" in acct:
+                acct["balance"] *= (1 + market_return)
+
 
     # =========================================================================
     # 4. RESULTS SUMMARIZER
