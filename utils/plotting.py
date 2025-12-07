@@ -12,24 +12,59 @@ import callbacks.simulation_callbacks as sim
 # ------------------------------------------------------------------
 def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_theme="Vivid"):
     """
-    trajectories = list of (label, data_array) where data_array is (n_sims, n_years)
+    Super-robust version – handles None, empty lists, zero-sim arrays, etc.
     """
     fig = go.Figure()
 
-    # Compute percentile for each category
+    # ------------------------------------------------------------
+    # 1. Total guard – no trajectories at all
+    # ------------------------------------------------------------
+    if not trajectories or len(trajectories) == 0:
+        fig.add_annotation(
+            text="No data available",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font_size=20
+        )
+        fig.update_layout(title=title, height=500, template="plotly_white")
+        return fig
+
+    # ------------------------------------------------------------
+    # 2. Guard – any trajectory is None or has zero simulations
+    # ------------------------------------------------------------
+    valid_trajectories = []
+    for label, data in trajectories:
+        # data can be None, np.array, or list → convert to np.array safely
+        if data is None:
+            continue
+        arr = np.asarray(data)
+        if arr.size == 0 or arr.shape[0] == 0:
+            continue  # skip completely empty series
+        valid_trajectories.append((label, arr))
+
+    if not valid_trajectories:
+        fig.add_annotation(
+            text="0 successful simulations",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font_size=20
+        )
+        fig.update_layout(title=title, height=500, template="plotly_white")
+        return fig
+
+    # ------------------------------------------------------------
+    # 3. Now we actually have real data → safe to compute percentiles
+    # ------------------------------------------------------------
     percentile_data = {
-        label: np.percentile(data, percentile, axis=0)
-        for label, data in trajectories
+        label: np.percentile(arr, percentile, axis=0)
+        for label, arr in valid_trajectories
     }
 
-    # Color palette
     colors = px.colors.qualitative.Vivid if color_theme == "Vivid" else px.colors.qualitative.Plotly
 
-    for idx, (label, _) in enumerate(trajectories):
-        y = percentile_data[label][2:]  # skip first 2 years
+    for idx, (label, _) in enumerate(valid_trajectories):
+        y = percentile_data[label][2:]  # skip first 2 years (IRMAA lag)
 
         fig.add_trace(go.Scatter(
-            x=sim.years[2:], #skip first 2 years
+            x=sim.years[2:],
             y=y,
             mode='lines',
             line=dict(width=0),
@@ -39,9 +74,9 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
             hovertemplate=f'<b>{label}</b><br>Year: %{{x}}<br>Value: $%{{y:,.0f}}<extra></extra>'
         ))
 
-    percentile_suffix = " (Median)" if percentile == 50 else f" ({percentile}th percentile)"
+    suffix = " (Median)" if percentile == 50 else f" ({percentile}th %ile)"
     fig.update_layout(
-        title=title + percentile_suffix,
+        title=title + suffix,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
         template="plotly_white",
@@ -54,18 +89,53 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
 
 # ------------------------------------------------------------------
 # HELPER: Regular multi-line charts (MAGI, Travel/Gifting, etc.)
-# ------------------------------------------------------------------
 def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     """
-    Plots median (solid thick) + 10th and 90th percentiles (dashed thin)
+    Plots median + 10th/90th percentiles.
+    Now 100% safe against None, empty arrays, or zero simulations.
     """
     fig = go.Figure()
-    
-    for label, data in trajectories_dict.items():
-        data_trimmed = data[:, 2:]  # skip first 2 years
-        years = sim.years[2:]
 
-        # Median (your original)
+    # --------------------------------------------------
+    # Guard: no data at all
+    # --------------------------------------------------
+    if not trajectories_dict or all(v is None for v in trajectories_dict.values()):
+        fig.add_annotation(
+            text="No data",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False, font_size=20
+        )
+        fig.update_layout(title=title, height=400, template="plotly_white")
+        return fig
+
+    # --------------------------------------------------
+    # Convert everything to numpy arrays safely
+    # --------------------------------------------------
+    valid_data = {}
+    for label, data in trajectories_dict.items():
+        if data is None:
+            continue
+        arr = np.asarray(data)
+        if arr.size == 0 or arr.shape[0] == 0:
+            continue
+        valid_data[label] = arr
+
+    if not valid_data:
+        fig.add_annotation(
+            text="0 successful simulations",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False, font_size=20
+        )
+        fig.update_layout(title=title, height=400, template="plotly_white")
+        return fig
+
+    # --------------------------------------------------
+    # We have real data → plot it
+    # --------------------------------------------------
+    for label, data in valid_data.items():
+        data_trimmed = data[:, 2:] if data.shape[1] > 2 else data
+        years = sim.years[2:] if len(sim.years) > 2 else sim.years
+
         y_median = np.median(data_trimmed, axis=0)
         fig.add_trace(go.Scatter(
             x=years,
@@ -76,26 +146,14 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
             hovertemplate=f'<b>{label}</b><br>Year: %{{x}}<br>Value: $%{{y:,.0f}}<extra></extra>'
         ))
 
-        # 10th and 90th percentiles
         p10 = np.percentile(data_trimmed, 10, axis=0)
         p90 = np.percentile(data_trimmed, 90, axis=0)
-        color = fig.data[-1].line.color  # grab the color from the median line
+        color = fig.data[-1].line.color
 
-        fig.add_trace(go.Scatter(
-            x=years, y=p90,
-            line=dict(color=color, width=1.5, dash='dash'),
-            name=f"{label} 90th",
-            showlegend=False,
-            hovertemplate=f'{label} 90th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=years, y=p10,
-            line=dict(color=color, width=1.5, dash='dash'),
-            name=f"{label} 10th",
-            showlegend=False,
-            hovertemplate=f'{label} 10th percentile<br>Year: %{{x}}<br>$%{{y:,.0f}}<extra></extra>'
-        ))
+        fig.add_trace(go.Scatter(x=years, y=p90, line=dict(color=color, width=1.5, dash='dash'),
+                                 name=f"{label} 90th", showlegend=False))
+        fig.add_trace(go.Scatter(x=years, y=p10, line=dict(color=color, width=1.5, dash='dash'),
+                                 name=f"{label} 10th", showlegend=False))
 
     fig.update_layout(
         title=title,

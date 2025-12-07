@@ -74,8 +74,8 @@ def register_simulation_callbacks(app):
                 irmaa_strategy=irmaa_strategy
             )
 
-            sim = RetirementSimulator(inputs)
-            results = sim.run_simulation()
+            sim = RetirementSimulator(inputs)   # ← fresh every time
+            results = sim.run_simulation()      # ← only called once per instance
 
             elapsed = time.time() - start_time
 
@@ -148,12 +148,12 @@ def register_simulation_callbacks(app):
             tb = traceback.format_exc()
             print(tb)
             error_msg = f"Simulation failed: {str(e)}\nFull traceback:\n{tb}"
-            
-            # Return empty figures and the error message to all outputs
-            error_header = html.Div("Simulation Failed", style={'color': 'red', 'fontSize': '40px'})
-            empty_figures = [go.Figure() for _ in get_figure_ids()] # Now 13 figures
-            error_div = html.Div(error_msg, style={"color": "red"})
 
-            error_div = html.Div(error_msg, style={"color": "red"})
-            
-            return error_header, *empty_figures, error_div, error_msg, results_to_store
+            # ←←← Define results_to_store even when we crash
+            results_to_store = {"error": error_msg}
+
+            error_header = html.Div("Simulation Failed", style={'color': 'red', 'fontSize': '40px'})
+            empty_figures = [go.Figure() for _ in get_figure_ids()]
+            error_div = html.Div(error_msg, style={"color": "red", "whiteSpace": "pre-wrap"})
+
+            return error_header, *empty_figures, error_div, error_div, results_to_store
