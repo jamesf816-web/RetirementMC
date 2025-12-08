@@ -27,7 +27,6 @@ def register_results_callbacks(app):
         Output("travel-gifting", "figure"),
         Output("roth-conversions", "figure"),
         Output("medicare-costs", "figure"),
-        Output("metrics-table", "children"),
         Output("debug-output", "children"),
 
         Input("simulation-data-store", "data"),  # This is what triggers the update
@@ -68,15 +67,14 @@ def register_results_callbacks(app):
             inputs = PlannerInputs(**inputs_dict)
 
             # Generate plots
-            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
-
+            all_figures
+            
             # Debug output
             debug_log = data_dict.get("debug_log", [])
             debug_text = "\n".join(map(str, debug_log))
 
             # Return in exact order expected by the outputs above
             return (
-                rate_header,
                 all_figures["portfolio-median"],
                 all_figures["portfolio-p10"],
                 all_figures["portfolio-p90"],
@@ -90,7 +88,6 @@ def register_results_callbacks(app):
                 all_figures["travel-gifting"],
                 all_figures["roth-conversions"],
                 all_figures["medicare-costs"],
-                metrics_table,
                 debug_text
             )
 

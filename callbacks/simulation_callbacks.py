@@ -10,16 +10,17 @@ from utils.input_adapter import get_planner_inputs
 from engine.simulator import RetirementSimulator
 from utils.plotting import generate_all_plots, get_figure_ids
 from models import PlannerInputs
-from utils.currency import clean_currency
+from utils.currency import clean_currency, clean_percent
+from utils.ui_components import create_rate_header
 
 years = None #initialize to pass to plotting
 
 def register_simulation_callbacks(app):
     
     # Output for the main success/ruin rate header 
-    SUCCESS_HEADER_OUTPUT = Output("success-header", "children") 
+    SUCCESS_HEADER_OUTPUT = Output("success_header", "children") 
 
-    # Dynamically build the list of Figure IDs + 2 metrics IDs
+    # Dynamically build the list of Figure IDs
     FIGURE_OUTPUTS = [Output(id, "figure") for id in get_figure_ids()]
 
     # Output for use by register_returns_callback
@@ -30,8 +31,6 @@ def register_simulation_callbacks(app):
         SUCCESS_HEADER_OUTPUT,
         # Figures
         *FIGURE_OUTPUTS,
-        # Metrics Table 
-        Output("metrics-table", "children"),
         # Debug outputs
         Output("debug-output", "children"),
         # Store output
@@ -78,7 +77,7 @@ def register_simulation_callbacks(app):
                 tax_strategy=tax_strategy,
                 irmaa_strategy=irmaa_strategy,
                 ss_fail_year=ss_fail_year,
-                ss_fail_percent=ss_fail_percent,
+                ss_fail_percent=clean_percent(ss_fail_percent),
             )
 
             sim = RetirementSimulator(inputs)   # ← fresh every time
@@ -95,12 +94,24 @@ def register_simulation_callbacks(app):
             years = np.arange(inputs.current_year - 2, inputs.current_year + n_years) 
 
             # ----------------------------------------------------------------
-            # GENERATE PLOTS
+            # GENERATE PLOTS and SUCCESS/RUIN HEADER and DEBUG OUTPUT
             # ----------------------------------------------------------------
-            all_figures, rate_header, metrics_table = generate_all_plots(results, inputs, elapsed)
-            
-            # Prepare the figure list in the correct order for the return statement
-            figure_list = [all_figures[id] for id in get_figure_ids()]
+            figure_list = generate_all_plots(results, inputs, elapsed)
+ 
+            success = results.get("success_rate", 0.0)
+            avoid_ruin = results.get("avoid_ruin_rate", 0.0)
+            success_header = create_rate_header(success, avoid_ruin) 
+
+            sim_count = getattr(inputs, "num_simulations", 1000)
+            final_debug_content = (
+                f"Simulation completed in {elapsed:.2f}s\n"
+                f"Success: {success:.1f} | Avoid Ruin: {avoid_ruin:.1f}\n"
+                f"Debug log:\n" + "\n".join(getattr(sim, "debug_log", []))
+            )
+            debug_output = html.Div(
+                final_debug_content,
+                style={'whiteSpace': 'pre-wrap', 'fontSize': '18px', 'color': 'blue', 'marginTop': '10px'}
+            )
             
             # ----------------------------------------------------------------
             # PREPARE DATA STORE FOR RESULTS
@@ -132,24 +143,10 @@ def register_simulation_callbacks(app):
             }
  
             # ----------------------------------------------------------------
-            # Metrics and Debug 
+            # FINL RETURN
             # ----------------------------------------------------------------
-            success = results.get("success_rate", 0)
-            avoid_ruin = results.get("avoid_ruin_rate", 0)
-            sim_count = getattr(inputs, "num_simulations", 1000)
-
-            final_debug_content = (
-                f"Simulation completed in {elapsed:.2f}s\n"
-                f"Success: {success:.1f} | Avoid Ruin: {avoid_ruin:.1f}\n"
-                f"Debug log:\n" + "\n".join(getattr(sim, "debug_log", []))
-            )
-            debug_output = html.Div(
-                final_debug_content,
-                style={'whiteSpace': 'pre-wrap', 'fontSize': '18px', 'color': 'blue', 'marginTop': '10px'}
-            )
-            
-            # The return must match the order of *FIGURE_OUTPUTS, then the two metrics
-            return rate_header, *figure_list, metrics_table, debug_output, results_to_store
+ 
+            return success_header, *figure_list, debug_output, results_to_store
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -163,4 +160,4 @@ def register_simulation_callbacks(app):
             empty_figures = [go.Figure() for _ in get_figure_ids()]
             error_div = html.Div(error_msg, style={"color": "red", "whiteSpace": "pre-wrap"})
 
-            return error_header, *empty_figures, error_div, error_div, results_to_store
+            return error_header, *empty_figures, error_div, results_to_store

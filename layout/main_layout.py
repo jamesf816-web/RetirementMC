@@ -6,12 +6,18 @@ from dash import html
 
 import dash_ag_grid as dag
 import plotly.graph_objects as go
+import numpy as np
 
 from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
-from utils.currency import pretty_currency_input
-from utils.currency import pretty_percent_input
+from utils.currency import pretty_currency_input, pretty_year_input, pretty_percent_input
 
 from layout.results_layout import create_results_layout
+
+from callbacks.editor_callbacks import format_currency_output
+
+# Calculate the initial total balance from the default data
+INITIAL_TOTAL_BALANCE = sum(v.get('balance', 0) for v in DEFAULT_ACCOUNTS.values())
+INITIAL_TOTAL_BALANCE_STR = format_currency_output(INITIAL_TOTAL_BALANCE)
 
 # ----------------------------------------------------------------------
 # Application Layout Definition
@@ -56,7 +62,7 @@ main_layout = html.Div(
                     'alignSelf': 'flex-end',
                 }
             ),
- 
+         
             # COLUMN 1B: Slider (takes up most of the space)
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
@@ -65,41 +71,45 @@ main_layout = html.Div(
                     marks={i: f"{i//1000}k" for i in range(0, 31000, 5000)},
                     tooltip={"placement": "bottom", "always_visible": True},
                 ),
-            ], style={'flex': 1, 'minWidth': '300px', 'padding': '0 20px'}), 
+            ], style={'flex': 1, 'minWidth': '300px', 'padding': '0 20px'}
+            ), 
 
             # COLUMN 1C: Run Button 
-            html.Div([
-                html.Button(
-                    "Run Simulation",
-                    id="run",
-                    n_clicks=0,
-                    style={
-                        'marginTop': '30px',
-                        'width': '100%',
-                        'height': '50px',
-                        'fontSize': 16, 
-                        'backgroundColor': '#3498db',
-                        'color': 'white', 
-                        'border': 'none',
-                        'borderRadius': '8px',
-                        'alignSelf': 'flex-end',
-                        'marginBottom': '2px'
-                    }
-                ),
-            ], style={'width': '160px', 'flex': 'none'}),
-            dcc.Download(id="download-xml-portfolio"),
+            html.Button(
+                "Run Simulation",
+                id="run",
+                n_clicks=0,
+                style={
+                    'padding': '12px 20px',
+                    'fontSize': '16px',
+                    'fontWeight': 'bold',
+                    'backgroundColor': '#3498db',
+                    'color': 'white', 
+                    'border': 'none',
+                    'borderRadius': '8px',
+                    'cursor': 'pointer',
+                    'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
+                    'whiteSpace': 'nowrap',
+                    'height': '50px',
+                    'alignSelf': 'flex-end',
+                }
+            ),
+            
         ], style={
             'display': 'flex', 
             'alignItems': 'flex-end', 
             'gap': '15px', 
-            'marginBottom': '20px', 
+            'marginBottom': '30px', 
             'flexWrap': 'wrap', 
             'width': '100%',
             'boxSizing': 'border-box'
         }),
+  
+        # ----------------------------------------------------------------------
+        # ROW 1 - COLLAPSIBLE PORTFOLIO EDITOR FULL WIDTH WHEN OPEN
+        # ----------------------------------------------------------------------
+        dcc.Download(id="download-xml-portfolio"),
 
-        # COLLAPSIBLE PORTFOLIO EDITOR FULL WIDTH WHEN OPEN
-        # This Div shows/hides based on CSS (starts hidden)
         html.Div(
             id="portfolio-collapse-content",
             style={'display': 'none'},
@@ -161,7 +171,22 @@ main_layout = html.Div(
                             html.Button("Reset to Defaults", id="reset-portfolio-btn", n_clicks=0,
                                          style={'backgroundColor': '#e74c3c', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
 
-                            # 5. Portfolio Status Div
+                            # 5. Total Portfolio Balance Display
+                            html.Div(
+                                id="total-portfolio-balance",
+                                children=f"Total Portfolio Balance: {INITIAL_TOTAL_BALANCE_STR}",
+                                style={
+                                    'marginLeft': 'auto',
+                                    'marginRight': '30px',
+                                    'fontWeight': 'bold',
+                                    'fontSize': '20px',
+                                    'color': '#34495e',
+                                    'minWidth': '250px', 
+                                    'textAlign': 'right'
+                                }
+                            ),
+
+                            # 6. Portfolio Status Div
                             html.Div(id="portfolio-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'})
 
                         ], style={'marginBottom': '15px', 'display': 'flex', 'alignItems': 'center'}),
@@ -212,16 +237,16 @@ main_layout = html.Div(
                                 "floatingFilter": True
                             },
                             dashGridOptions={"rowHeight": 48, "animateRows": False},
-                            style={"height": 550},
+                            style={"height": 550, "minWidth": 1200},
                             className="ag-theme-alpine",
                         )
-                    ]
+                    ] 
                 )
             ]
         ),
 
         # ----------------------------------------------------------------------
-        # ROW 2: Inputs and Dropdowns (7 Items) – YOUR ORIGINAL PERFECT LAYOUT
+        # ROW 2: Main Inputs and Dropdowns 
         # ----------------------------------------------------------------------
         html.Div([
             # Item 2A: Base Spending - Correct call: pretty_currency_input returns a list of children
@@ -232,7 +257,7 @@ main_layout = html.Div(
 
             # Item 2B: Withdrawal Rate - Now using the new pretty_percent_input for matching style
             html.Div(
-                pretty_percent_input('withdrawal_rate', value=0.050, step=0.001, label="Withdrawal Rate", placeholder="5.0%"),
+                pretty_percent_input('withdrawal_rate', value=0.050, step=0.001, label="Withdrawal Rate", placeholder="5.0%", decimals=2),
                 style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
             ),
 
@@ -294,105 +319,83 @@ main_layout = html.Div(
             'display': 'flex',
             'gap': '15px 15px', # Ensures clean row and column separation
             'flexWrap': 'wrap',
-            'marginBottom': '10px',
+            'marginBottom': '15px',
             'width': '100%',
             'boxSizing': 'border-box'
         }),
 
         # ----------------------------------------------------------------------
-        # RESULTS SECTION 
+        #  ROW 3:Remaining Inputs + Success/Avoid Ruin Output
         # ----------------------------------------------------------------------
-        html.Div(
-            style={
-                'display': 'grid',
-                'gridTemplateColumns': 'auto 1fr',
-                'gap': '30px',
-                'alignItems': 'center',
-                'padding': '20px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '12px',
-                'boxShadow': '0 4px 12px rgba(0,0,0,0.05)',
-                'marginBottom': '15px',
-                'minHeight': '68px'
-            },
-            children=[
-                html.Div(
-                    style={
-                        'display': 'flex',
-                        'gap': '30px',
-                        'justifyContent': 'flex-start',
-                        'flexWrap': 'nowrap',
-                        'overflowX': 'auto',
-                        'paddingRight': '20px'
-                    },
-                    children=[
-                        # Existing Thresholds
-                        html.Div(
-                            pretty_currency_input('success_threshold', value=500000, label="Success Threshold")
-                        ),
-                        html.Div(
-                            pretty_currency_input('avoid_ruin_threshold', value=500000, label="Avoid Ruin Threshold")
-                        ),
-                        
-                        # --- SS Trust Fund Failure Inputs ---
-                        html.Div([
-                            html.Label("SS Fail Year", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'textAlign': 'center', 'marginBottom': '6px'}),
-                            dcc.Input(
-                                id='ss_fail_year',
-                                type='number',
-                                value=2033,
-                                style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center', 'width': '120px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
-                            )
-                        ]),
-                        
-                        html.Div(
-                             # Using pretty_percent_input to match the style of "Withdrawal Rate"
-                             # Assuming pretty_percent_input(id, value, step, label) signature
-                             pretty_percent_input('ss_fail_percent', value=0.23, step=0.01, label="SS Fail Cut %")
-                        ),
-                    ]
-                ),
-                
-                # Dynamic Header (Right Side)
-                html.Div(
-                    id='success-header',
-                    children="Click 'Run Simulation' to load results",
-                    style={
-                        'textAlign': 'center',
-                        'fontWeight': 'bold',
-                        'fontSize': '20px',
-                        'color': '#1a1a1a',
-                        'padding': '0px 10px',
-                        'backgroundColor': '#e3f2fd',
-                        'border': '2px solid #0052CC',
-                        'borderRadius': '8px',
-                        'minWidth': '340px',
-                        'maxWidth': '800px',
-                        'height': '50px',
-                        'justifySelf': 'end',
-                        'lineHeight': '1.3',
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'justifyContent': 'center'
-                    }
-                ),
-            ]
-        ),
+        html.Div([
+            # Item 3A: Success Threshold
+            html.Div(
+                pretty_currency_input('success_threshold', value=float(100_000), label="Success Threshold"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
+            
+            # Item 3B: Avoid Ruin Threshold
+            html.Div(
+                pretty_currency_input('avoid_ruin_threshold', value=float(50_000), label="Avoid Ruin"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}      
+            ),
+            
+            # Item 3C: SS Trust Fund Failure Year
+            html.Div(
+                pretty_year_input('ss_fail_year', value=int(2033), label="SS Fail Year"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
+            
+            # Item 3D:  SS Trust Fund % reduction in benefits
+            html.Div(
+                pretty_percent_input('ss_fail_percent', value=float(0.23), label="SS Benefit Recution", decimals=1),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
+            
+            # Item 3E: Output of Success/Avoid Failure Rates
+            html.Div(
+                id='success_header',
+                children="Click 'Run Simulation' to load results",
+                style={'flex': '3',
+                    'textAlign': 'center',
+                    'fontWeight': 'bold',
+                    'fontSize': '20px',
+                    'color': '#1a1a1a',
+                    'padding': '0px 10px',
+                    'backgroundColor': '#e3f2fd',
+                    'border': '2px solid #0052CC',
+                    'borderRadius': '8px',
+                    'minWidth': "340px",
+                    'height': '60px',
+                    'justifySelf': 'end',
+                    'lineHeight': '1.2',
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'justifyContent': 'center'
+                }
+            ),
+            
+        ], style={
+            'display': 'flex',
+            'gap': '15px 15px', # Ensures clean row and column separation
+            'flexWrap': 'wrap',
+            'marginBottom': '10px',
+            'width': '100%',
+            'boxSizing': 'border-box'
+        }),
         
-        # The detailed plots section (Calls the function that now only returns plots)
+        # ----------------------------------------------------------------------
+        # PLOTS SECTION 
+        # ----------------------------------------------------------------------
         html.Div(id="results", children=[
             create_results_layout(),
         ]),
-
-        # The detailed metrics table remains separate below the plots
-        html.Div(
-            id="metrics-table",
-            children=html.P("Metrics will appear here after run.", style={"color": "#888", "fontStyle": "italic"}),
-            style={"marginTop": "30px", "textAlign": "center"}
-        ),
         
-        # debug element
+        # ----------------------------------------------------------------------
+        # DEBUG LOG
+        # ----------------------------------------------------------------------
         html.Div(id="debug-output", style={"whiteSpace": "pre-wrap", "fontSize": 12, "display": "none"}),
         
     ] 
 )
+

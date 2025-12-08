@@ -781,7 +781,7 @@ class RetirementSimulator:
              }
 
         success = self.inputs.success_threshold
-        avoud_ruin = self.inputs.avoid_ruin_threshold
+        avoid_ruin = self.inputs.avoid_ruin_threshold
         portfolio_end = self.portfolio_paths[:, -1]
         
         success_rate = np.mean(portfolio_end > success) * 100

@@ -51,12 +51,6 @@ def get_planner_inputs(
         for key, value in inputs_dict.items() 
         if key in planner_field_names
     }
-
-
     
-    # <<< ADD THIS PRINT STATEMENT >>>
-    print(f"Final inputs passed to PlannerInputs: {final_inputs.keys()}") 
-    # <<< AND ADD THIS PRINT STATEMENT >>>
-    print(f"All valid PlannerInputs fields: {planner_field_names}")        
     # 6. Create the PlannerInputs object
     return PlannerInputs(**final_inputs)

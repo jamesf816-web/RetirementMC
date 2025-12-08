@@ -4,7 +4,6 @@ from dash import html, dcc
 def create_results_layout():
     """
     Static layout for the plots section only.
-    The success-header and sim-info elements are moved to main_layout.py.
     """
     return html.Div([
 
@@ -31,6 +30,6 @@ def create_results_layout():
         html.Div([dcc.Graph(id='roth-conversions')], style={'margin': '40px 0'}),
         html.Div([dcc.Graph(id='medicare-costs')], style={'margin': '40px 0'}),
 
-        # NOTE: Metrics table abd debug log removed from here and placed in main_layout.py
+        # NOTE: Metrics table and debug log removed from here and placed in main_layout.py
 
     ], style={'maxWidth': '1400px', 'margin': '0 auto'})

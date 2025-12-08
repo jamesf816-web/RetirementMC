@@ -1,11 +1,14 @@
 import dash
 from dash import Input, Output, State, callback, no_update, ctx
 from dash.exceptions import PreventUpdate
-from utils.currency import clean_currency
+
 # Import the specific utility functions needed
 from utils.xml_loader import parse_portfolio_xml
 from utils.xml_loader import parse_xml_content_to_dict
 from utils.xml_writer import create_portfolio_xml
+
+from utils.currency import clean_currency, format_currency_output
+
 
 import base64
 import io
@@ -209,7 +212,7 @@ def register_editor_callbacks(app):
         
         return hide_style, show_style
 
-   # ======================================================================
+    # ======================================================================
     # CURRENCY FORMATTING CALLBACKS (Handles immediate UI reformatting)
     # ======================================================================
 
@@ -219,8 +222,8 @@ def register_editor_callbacks(app):
         "max_roth",
         "travel",
         "gifting",
-        "success-threshold",
-        "avoid-ruin-threshold",
+        "success_threshold",
+        "avoid_ruin_threshold",
         # Add any other currency input IDs here
     ]
 
@@ -285,7 +288,7 @@ def register_editor_callbacks(app):
                 pass
 
         return formatted_values
-
+    
     # ----------------------------------------------------------------------
     # 7. Save to XML (Download)
     # ----------------------------------------------------------------------
@@ -323,3 +326,67 @@ def register_editor_callbacks(app):
             )
 
         raise PreventUpdate
+
+    # ----------------------------------------------------------------------
+    # 8. Get total portfolio value dynamically to displauy while editing
+    # ----------------------------------------------------------------------
+
+    @app.callback(
+        Output('total-portfolio-balance', 'children'),
+        # 1. Triggers for Reset, Upload, and Add Account (when rowData is set)
+        Input('portfolio-grid', 'rowData'), 
+        # 2. Triggers for manual user edits to a cell
+        Input('portfolio-grid', 'cellValueChanged'),
+        prevent_initial_call=True
+    )
+    def update_total_portfolio_balance(row_data, cell_value_change):
+        # When either Input fires, 'row_data' contains the current state of the grid.
+        
+        # Check if the data is valid before proceeding
+        if not row_data:
+            # When using multiple Inputs, you should typically use dash.no_update 
+            # or raise PreventUpdate if you don't want to change the output.
+            # Returning a string works fine if the initial placeholder is set.
+            return "NO DATA *** Total Portfolio Balance: $0.00"
+
+        total_balance = 0.0
+        for row in row_data:
+            try:
+                # The balance column in the grid may still contain a string, so clean_currency is essential here.
+                balance = clean_currency(row.get('balance', 0.0))
+                total_balance += balance
+            except (ValueError, TypeError):
+                # Safely ignore rows with non-numeric or malformed balances
+                pass
+
+        # Use the imported utility to format the output string
+        formatted_total = format_currency_output(total_balance, 0) # 0 decimal places
+
+        return f"Total Portfolio Balance: {formatted_total}"
+    @callback(
+        Output('total-portfolio-balance', 'children'),
+        # This input triggers whenever the grid's rowData changes (edits, add, reset, upload)
+        Input('portfolio-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def update_total_portfolio_balance(row_data):
+        if not row_data:
+            return "NO DATA *** Total Portfolio Balance: $0.00"
+
+        total_balance = 0.0
+        for row in row_data:
+            # The 'balance' value must be extracted and cleaned if necessary
+            # Assuming the 'balance' field is stored as a float/int:
+            try:
+                balance = clean_currency(row.get('balance', 0.0))
+                total_balance += balance
+            except (ValueError, TypeError):
+                # Handle cases where the input might not be a clean number yet
+                pass
+
+        # You should use a currency formatting utility here if you have one.
+        # Otherwise, simple formatting works:
+        formatted_total = format_currency_output(total_balance, 0) #second argument is decimal places
+
+        return f"Total Portfolio Balance: {formatted_total}"
+

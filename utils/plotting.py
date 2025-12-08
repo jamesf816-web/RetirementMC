@@ -167,24 +167,6 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     return fig
 
 # ------------------------------------------------------------------
-# HTML headers/tables
-# ------------------------------------------------------------------
-def create_rate_header(success_rate, success_style, ruin_avoidance):
-    return html.Div([
-        html.H3(f"Success Rate: {success_rate:.1f}%", style=success_style),
-        html.H3(f"Ruin Avoidance: {ruin_avoidance:.1f}%", style=success_style),
-    ], style={'display': 'flex', 'justifyContent': 'center', 'padding': '15px'})
-
-def create_metrics_table(results, inputs, elapsed):
-    final_median = results.get('final_median', np.nan)
-    return html.Table([
-        html.Tr([html.Th("Metric", style={'textAlign': 'left'}), html.Th("Value")]),
-        html.Tr([html.Td("Simulation Time"), html.Td(f"{elapsed:.2f} s")]),
-        html.Tr([html.Td("Final Median Portfolio"), html.Td(f"${final_median:,.0f}" if not np.isnan(final_median) else "N/A")]),
-    ], style={'width': '100%', 'marginTop': '10px', 'borderCollapse': 'collapse'})
-
-
-# ------------------------------------------------------------------
 # MAIN FUNCTION 
 # ------------------------------------------------------------------
 def generate_all_plots(results: dict, inputs, elapsed):
@@ -274,23 +256,7 @@ def generate_all_plots(results: dict, inputs, elapsed):
     all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)")
     all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)")
 
-    # Headers — ALWAYS compute fresh, never trust stale data_dict value
-    success_rate = results.get("success_rate", 0.0)
-    ruin_rate = results.get("avoid_ruin_rate", 0.0)
-    
-    color = vanguard_color(success_rate)
-    success_style = {
-        "color": color,
-        "fontWeight": "bold",
-        "fontSize": "28px",
-        "margin": "0 40px",
-        "textAlign": "center"
-    }
-    
-    rate_header = create_rate_header(success_rate, success_style, ruin_rate)
-    metrics_table = create_metrics_table(results, inputs, elapsed)
-
-    return all_figures, rate_header, metrics_table
+    return [all_figures[id] for id in get_figure_ids()]
 
 
 def get_figure_ids():
@@ -301,19 +267,3 @@ def get_figure_ids():
         "portfolio-p90", "income-p90", "spending-p90"
     ]
 
-def vanguard_color(success_rate):
-    # Check for valid numeric input. If not, return a safe, default color.
-    if not isinstance(success_rate, (int, float)) or success_rate is None or np.isnan(success_rate):
-        print(f"ERROR: vanguard_color received invalid rate: {success_rate}")
-        return 'rgb(128, 128, 128)'  # Gray color for safety
-
-    sr = max(0, min(100, success_rate))
-    
-    if sr >= 75:
-        r = int(255 * (1 - (sr - 75)/25)); g = 200; b = 0
-    elif sr >= 50:
-        r = 255; g = int(200 * ((sr - 50)/25 + 0.5)); b = 0
-    else:
-        r = 255; g = int(200 * (sr/50)); b = 0
-        
-    return f'rgb({int(r)},{int(g)},{int(b)})'
