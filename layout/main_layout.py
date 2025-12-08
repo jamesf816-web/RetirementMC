@@ -326,14 +326,34 @@ main_layout = html.Div(
                         'paddingRight': '20px'
                     },
                     children=[
+                        # Existing Thresholds
                         html.Div(
-                            pretty_currency_input('success-threshold', value=500000, label="Success Threshold")
+                            pretty_currency_input('success_threshold', value=500000, label="Success Threshold")
                         ),
                         html.Div(
-                            pretty_currency_input('avoid-ruin-threshold', value=500000, label="Avoid Ruin Threshold")
+                            pretty_currency_input('avoid_ruin_threshold', value=500000, label="Avoid Ruin Threshold")
+                        ),
+                        
+                        # --- SS Trust Fund Failure Inputs ---
+                        html.Div([
+                            html.Label("SS Fail Year", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'textAlign': 'center', 'marginBottom': '6px'}),
+                            dcc.Input(
+                                id='ss_fail_year',
+                                type='number',
+                                value=2033,
+                                style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center', 'width': '120px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
+                            )
+                        ]),
+                        
+                        html.Div(
+                             # Using pretty_percent_input to match the style of "Withdrawal Rate"
+                             # Assuming pretty_percent_input(id, value, step, label) signature
+                             pretty_percent_input('ss_fail_percent', value=0.23, step=0.01, label="SS Fail Cut %")
                         ),
                     ]
                 ),
+                
+                # Dynamic Header (Right Side)
                 html.Div(
                     id='success-header',
                     children="Click 'Run Simulation' to load results",
@@ -359,7 +379,6 @@ main_layout = html.Div(
             ]
         ),
         
- 
         # The detailed plots section (Calls the function that now only returns plots)
         html.Div(id="results", children=[
             create_results_layout(),

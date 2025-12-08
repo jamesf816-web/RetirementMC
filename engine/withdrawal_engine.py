@@ -1,30 +1,56 @@
-# Withdrawal_engine.py
-#
+# withdrawal_engine.py
+
 # Handlkes logic for prioritizing account withdrawals
 #
-    def _get_withdrawal_order(self):
+class WithdrawalEngine:
+    """
+    Handles logic for prioritizing account withdrawals based on tax strategy.
+    """
+    def __init__(self, inputs, accounts_metadata):
+        self.inputs = inputs
+        self.accounts_metadata = accounts_metadata
+        
+    def _get_withdrawal_order(self) -> list:
         """
-        Future Proofing: Read this from XML/Inputs later.
-        Current: Hardcoded standard order.
+        Dynamically determines the withdrawal hierarchy based on the tax strategy.
         """
-        return ["taxable", "trust", "inherited", "traditional", "roth"]
+        tax_strategy = self.inputs.tax_strategy
+        
+        # Determine the order of accounts to withdraw from based on strategy
+        if tax_strategy == 'maximize_roth':
+            # Priority: Taxable -> Traditional/Inherited -> Roth (maximize Roth life)
+            return ["taxable", "trust", "traditional", "inherited", "def457b", "roth"]
+        elif tax_strategy == 'maximize_traditional':
+            # Priority: Roth -> Traditional/Inherited -> Taxable
+            return ["roth", "trust", "traditional", "inherited", "def457b", "taxable"]
+        else:
+            # Default to drawing down tax-deferred first to manage RMDs
+            return ["traditional", "def457b", "inherited", "taxable", "roth", "trust"]
+
 
     def _withdraw_from_hierarchy(self, 
                                  cash_needed: float, 
                                  accounts_bal: dict, 
-                                 order: list, 
                                  simulate_only: bool = False) -> dict:
         """
-        The Core Engine: Withdraws cash_needed following the order list.
+        The Core Engine: Withdraws cash_needed following the dynamically generated order.
         
         Args:
+            cash_needed: The cash needed from the portfolio.
+            accounts_bal: The current state of account balances (from the simulation path).
             simulate_only: If True, uses a copy of balances to just estimate taxes/basis.
             
         Returns: 
             Dict containing: 
             {'withdrawn': float, 'ordinary_inc': float, 'ltcg_inc': float, 'balances': dict}
         """
-        working_bal = accounts_bal.copy() if simulate_only else accounts_bal
+        # Determine the withdrawal order dynamically
+        order = self._get_withdrawal_order()
+
+        working_bal = accounts_bal
+        if simulate_only:
+            working_bal = copy.ddepcopy(accounts_bal)
+
         remaining = cash_needed
         total_withdrawn = 0.0
         ord_inc = 0.0
@@ -32,32 +58,25 @@
         
         for acct_type in order:
             # Filter accounts by type (preserve original iteration order)
-            targets = [k for k, v in self.accounts.items() if v["tax"] == acct_type]
+            targets = [k for k, v in self.accounts_metadata.items() if v["tax"] == acct_type]
             
             for name in targets:
-                if remaining <= 0: break
+                acct_state = working_bal[name]
+                numerical_balance = acct_state.get("balance", 0.0)
+                if numerical_balance <= 0: continue
                 
-                bal = working_bal[name]
-                if bal <= 0: continue
+                amt = min(numerical_balance, remaining)
                 
-                amt = min(bal, remaining)
-                
-                # Logic Update
-                working_bal[name] -= amt
+                acct_state["balance"] -= amt
                 remaining -= amt
                 total_withdrawn += amt
                 
-                # Tax Characterization
+                # Tax Characterization (Uses self.accounts_metadata)
                 if acct_type == "taxable":
-                    # Replicate your gain logic here
-                    acct_ref = self.accounts[name]
+                    acct_ref = self.accounts_metadata[name]
                     # Note: To perfectly replicate your logic, you need basis tracking
-                    # For now, replicate the logic:
-                    curr_gain = (bal + amt) - acct_ref["basis"] # Approximation based on original logic flow
-                    # (You may need to pass exact original basis if not modified in place)
-                    
-                    if (bal) > 0: # Avoid div by zero
-                        gain_pct = max(0, (bal - acct_ref.get("basis", bal)) / bal) # Simplified
+                    if  numerical_balance > 0:
+                        gain_pct = max(0, (numerical_balance - acct_ref.get("basis", numerical_balance)) / numerical_balance) 
                         realized = amt * gain_pct
                         ord_part = realized * acct_ref.get("ordinary_pct", 0.1)
                         ltcg_part = realized - ord_part
@@ -72,4 +91,3 @@
             "ltcg_inc": ltcg_inc,
             "balances": working_bal
         }
-

@@ -1,45 +1,62 @@
-# utils/input_adapter.py
 from models import PlannerInputs
-from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+from utils.xml_loader import DEFAULT_SETUP
+from dataclasses import fields
+from typing import List, Dict, Any
 
 def get_planner_inputs(
-    num_simulations: int,
-    base_annual_spending: float,
-    withdrawal_rate: float,
-    portfolio_data: list,
-    max_roth: float,
-    travel: float,
-    gifting: float,
-    tax_strategy: str,
-    irmaa_strategy: str,
-    # any others you use
-):
-    # Start with defaults from XML
+    portfolio_data: List[Dict], # Only list arguments that need special processing
+    **kwargs: Any              # Catch all other UI inputs dynamically
+) -> PlannerInputs:
+    """
+    Dynamically generates PlannerInputs by merging XML defaults and all UI inputs,
+    using reflection (dataclasses.fields) to ensure only valid fields are passed.
+    """
+    
+    # 1. Start with defaults loaded from the XML setup file
     inputs_dict = DEFAULT_SETUP.copy()
-    # Update portfolio
-    accounts = {row["name"]: {
-        "balance": row.get("balance", 0),
-        "equity": row.get("equity", 0.7),
-        "bond": row.get("bond", 0.3),
-        "tax": row.get("tax", "traditional"),
-        "owner": row.get("owner", "person1"),
-        "basis": row.get("basis", 0),
-        # etc.
-    } for row in portfolio_data}
+    
+    # 2. Merge ALL UI inputs (passed via **kwargs) into the defaults.
+    # The UI inputs will override any matching fields in DEFAULT_SETUP.
+    inputs_dict.update(kwargs)
 
+    # 3. Handle the 'nsims' naming convention mismatch if necessary.
+    # Assuming the UI input name is 'num_simulations' and the dataclass field is 'nsims'.
+    if 'num_simulations' in inputs_dict:
+        inputs_dict['nsims'] = inputs_dict.pop('num_simulations')
+
+    # 4. Handle the special case: portfolio_data -> accounts dictionary
+    accounts = {}
+    for row in portfolio_data:
+        acct_name = row.get("name")
+        if acct_name:
+            # Note: Ensure all account-specific fields are included here
+            accounts[acct_name] = {
+                "balance": row.get("balance", 0.0),
+                "equity": row.get("equity", 0.7),
+                "bond": row.get("bond", 0.3),
+                "tax": row.get("tax", "traditional"),
+                "owner": row.get("owner", "person1"),
+                "basis": row.get("basis", 0.0),
+                "rmd_factor_table": row.get("rmd_factor_table"),
+            }
     inputs_dict["accounts"] = accounts
 
-    # ←←← THIS IS THE ONLY PLACE UI VALUES GO ←←←
-    inputs_dict["nsims"] = num_simulations
-    inputs_dict["base_annual_spending"] = base_annual_spending
-    inputs_dict["withdrawal_rate"] = withdrawal_rate
-    inputs_dict["max_roth"] = max_roth
-    inputs_dict["travel"] = travel
-    inputs_dict["gifting"] = gifting
-    inputs_dict["tax_strategy"] = tax_strategy
-    inputs_dict["irmaa_strategy"] = irmaa_strategy
-    inputs_dict["ss_fail_year"] = 2038   # or whatever default
-    inputs_dict["ss_fail_percent"] = 0.23
+    # 5. DYNAMIC FIELD MAPPING AND FILTERING (Reflection)
+    # Get the set of all valid field names defined in the PlannerInputs dataclass.
+    planner_field_names = {f.name for f in fields(PlannerInputs)}
+    
+    # Filter the inputs_dict to ensure only keys that match PlannerInputs fields are kept.
+    final_inputs = {
+        key: value 
+        for key, value in inputs_dict.items() 
+        if key in planner_field_names
+    }
 
-    # Create the object
-    return PlannerInputs(**inputs_dict)
+
+    
+    # <<< ADD THIS PRINT STATEMENT >>>
+    print(f"Final inputs passed to PlannerInputs: {final_inputs.keys()}") 
+    # <<< AND ADD THIS PRINT STATEMENT >>>
+    print(f"All valid PlannerInputs fields: {planner_field_names}")        
+    # 6. Create the PlannerInputs object
+    return PlannerInputs(**final_inputs)

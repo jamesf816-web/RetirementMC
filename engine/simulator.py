@@ -1,45 +1,156 @@
+# engine.simulator.py
+
 import numpy as np
 import pandas as pd
 import copy
 import math
 from typing import List, Dict, Tuple, Any
 
+# --- Utilities and Models ---
 from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
-
 from models import PlannerInputs
 
-from config.expense_assumptions import *
-from config.market_assumptions import *
+# --- Configuration Imports
+from config.expense_assumptions import (
+    medicare_start_age,
+    medicare_part_b_base_2026,
+    medicare_supplement_annual,
+    irmaa_brackets_start_year,
+    mortgage_payoff_year,
+    mortgage_monthly_until_payoff,
+    property_tax_and_insurance,
+    car_replacement_cycle,
+    car_cost_today,
+    car_inflation,
+    home_repair_prob,
+    home_repair_mean,
+    home_repair_shape,
+    lumpy_expenses
+)
+from config.market_assumptions import (
+    initial_inflation_mu,
+    initial_inflation_sigma,
+    long_term_inflation_mu,
+    long_term_inflation_sigma,
+    years_to_revert,
+    initial_equity_mu,
+    initial_equity_sigma,
+    long_term_equity_mu,
+    long_term_equity_sigma,
+    initial_bond_mu,
+    initial_bond_sigma,
+    long_term_bond_mu,
+    long_term_bond_sigma,
+    corr_matrix
+)
 
 from engine.rmd_tables import get_rmd_factor
 from engine.def457b_tables import get_def457b_factor
 from engine.roth_optimizer import optimal_roth_conversion
-from engine.tax_planning import *
-from engine.tax_engine import *
-from engine.market_generator import *
-from engine.income_calculator import *
 
+from engine.accounts_income import AccountsIncomeEngine # importing a class here
+
+from engine.tax_planning import estimate_taxable_gap
+from engine.tax_engine import calculate_taxes
+from engine.market_generator import generate_returns, calculate_annual_inflation
+        
 class RetirementSimulator:
     """
     Runs Monte Carlo simulations for retirement planning, calculating taxes 
     and optimizing Roth conversions based on user inputs.
     """
     def __init__(self, inputs: PlannerInputs):
+
+        # -----------------------
+        # STEP 1: Initialize Inputs and Core Attributes
+        # -----------------------
         self.inputs = inputs
-        
-        # Set all input fields as class attributes
+
+        # Set all input fields as class attributes (e.g., self.nsims, self.current_year, etc.)
         for field, value in inputs.__dict__.items():
             setattr(self, field, value)
-             
-        # Use the inputs.accounts dictionary which plotting.py references for metadata
-        accounts_dict = self.inputs.accounts 
 
+        # -----------------------
+        # STEP 2: Normalize Accounts and Set Initial Balances
+        # -----------------------
+        # Must be called first to define 'self.initial_accounts' 
         self._normalize_accounts() 
+        
+        # Store initial balances for reference (Fix: use self.initial_accounts)
+        self.initial_balances = self.initial_accounts 
 
-        # Initialize ages based on birth year
+        # -----------------------
+        # STEP 3: Define Simulation Timeframe and Ages
+        # -----------------------
+        
+        # Calculate current ages
         self.current_age_p1 = self.current_year - self.person1_birth_year
-        self.current_age_p2 = self.current_year - (self.person2_birth_year or self.person1_birth_year) # don't allow None
-        self.num_years = self.end_age - min(self.current_age_p1, self.current_age_p2)
+        # Use person1's year as fallback if person2_birth_year is None
+        self.current_age_p2 = self.current_year - (self.person2_birth_year or self.person1_birth_year)
+
+        # N = The length of the main simulation loop (Year 0 onwards, e.g., age 60 to 89 is 30 years)
+        min_current_age = min(self.current_age_p1, self.current_age_p2)
+        self.num_years = self.end_age - min_current_age 
+        
+        # The full path length (N_full) includes two lookback years (Y-2, Y-1)
+        self.n_full = self.num_years + 2 
+
+        # Define simulation start parameters
+        start_year = self.current_year - 2
+        start_age_p1_path = self.current_age_p1 - 2
+        start_age_p2_path = self.current_age_p2 - 2
+
+        # Create the full arrays (Length n_full)
+        self.years = np.arange(start_year, start_year + self.n_full).tolist()
+        self.person1_ages = np.arange(start_age_p1_path, start_age_p1_path + self.n_full).tolist()
+        self.person2_ages = np.arange(start_age_p2_path, start_age_p2_path + self.n_full).tolist()
+
+        # Initialize random number generator for stoicastic home repair model
+        self.rng = np.random.default_rng()
+        
+        # -----------------------
+        # STEP 4: Initialize Path Storage
+        # -----------------------
+        # Initialization to None is appropriate since 'run_simulation' calculates the required size
+        # and initializes them to numpy arrays of zeros.
+        self.portfolio_paths = None
+        self.conversion_paths = None
+        self.account_paths = None
+        self.plan_paths = None
+        self.taxes_paths = None
+        self.magi_paths = None
+        self.base_spending_paths = None
+        self.lumpy_spending_paths = None
+        self.ssbenefit_paths = None
+        self.portfolio_withdrawal_paths = None
+        self.trust_income_paths = None
+        self.rmd_paths = None
+        self.def457b_income_paths = None
+        self.pension_paths = None
+        self.medicare_paths = None
+        self.gifting_paths = None
+        self.travel_paths = None
+
+        self.debug_log = []
+
+        # -----------------------
+        # STEP 5: Initialize Accounts/Income Engine
+        # -----------------------
+        # This must happen after self.years, self.nsims, and ages are defined.
+        self.accounts_income = AccountsIncomeEngine(
+            years=self.years,
+            num_sims=self.nsims,
+            inputs=self.inputs,
+            annual_inflation=None,
+            ages_person1=self.person1_ages,
+            ages_person2=self.person2_ages,
+            return_trajectories=True
+        )
+        # Link the inputs object to the engine, which is necessary for the engine's methods 
+        # (e.g., compute_rmds, compute_pension_income) to access parameters like birth years, etc.
+        self.accounts_income.inputs = self.inputs
+
+        #total_years_in_array = self.num_years + 2 # Includes Year -2, Year -1, Year 0 (Current Year), ..., Year N-1
         
         # Initialize storage arrays 
         self.portfolio_paths = None
@@ -58,11 +169,20 @@ class RetirementSimulator:
         self.pension_paths = None
         self.medicare_paths = None
         self.gifting_paths = None
-        self.travel_paths = None # Assuming this was part of your original paths
+        self.travel_paths = None 
 
         self.debug_log = []
 
-
+        self.accounts_income = AccountsIncomeEngine(
+            years=self.years,
+            num_sims=self.nsims,
+            inputs=self.inputs,
+            annual_inflation=None, 
+            ages_person1=self.person1_ages,
+            ages_person2=self.person2_ages,
+            return_trajectories=True
+        )
+        self.accounts_income.inputs = self.inputs
     # =========================================================================
     # 1. CORE SIMULATION RUNNER
     # =========================================================================
@@ -76,12 +196,18 @@ class RetirementSimulator:
         self.conversion_paths = np.zeros((num_paths, num_years))
         self.taxes_paths = np.zeros((num_paths, num_years))
         self.magi_paths = np.zeros((num_paths, num_years))
-        self.medicare_paths = np.zeros((num_paths, num_years))
+        self.base_spending_paths = np.zeros((num_paths, num_years))
+        self.lumpy_spending_paths = np.zeros((num_paths, num_years))
+        self.ssbenefit_paths = np.zeros((num_paths, num_years))
+        self.portfolio_withdrawal_paths = np.zeros((num_paths, num_years))
+        self.trust_income_paths = np.zeros((num_paths, num_years))
         self.rmd_paths = np.zeros((num_paths, num_years))
         self.def457b_income_paths = np.zeros((num_paths, num_years))
         self.pension_paths = np.zeros((num_paths, num_years))
-        self.ssbenefit_paths = np.zeros((num_paths, num_years))
-        self.portfolio_withdrawal_paths = np.zeros((num_paths, num_years))
+        self.medicare_paths = np.zeros((num_paths, num_years))
+        self.gifting_paths = np.zeros((num_paths, num_years))
+        self.travel_paths = np.zeros((num_paths, num_years))
+
         # Account paths stores the *final* account balance structure for each path/year
         self.account_paths = [[None] * num_years for _ in range(num_paths)] 
         
@@ -104,66 +230,141 @@ class RetirementSimulator:
         
         # Initialize state for this path
         current_accounts = copy.deepcopy(self.initial_accounts)
+
+        annual_rmd_required = 0.0   # This year's total RMD (calculated once, drawn quarterly)
         
         # Initialize path-specific history arrays
         # MAGI history needs to be long enough to track 2 years prior for IRMAA (index offset)
         magi_path = [0.0] * 2 + [0.0] * self.num_years
         
-        market_path = self._generate_market_path()
+        equity_q_path, bond_q_path = self._generate_market_path()
+
+        inflation_path = self._generate_inflation_path()
         inflation_path = self._generate_inflation_path()
         
         for i in range(self.num_years):
             year_index = i
             current_year = self.current_year + i
             current_inflation_index = inflation_path[i]
-            
             # Update ages
             current_age_person1 = self.current_age_p1 + i
             current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else None
-            
+            # =========================================================================
             # --- STEP 1: CALCULATE ANNUAL INCOME AND RMDs ---
-            
+            # =========================================================================
             # AGI is calculated progressively
             AGI = 0.0
-            
+             
             # RMDs (Required Minimum Distributions)
-            rmd_income = self._calculate_rmds(current_accounts, current_age_person1, current_age_person2, current_year)
-            AGI += rmd_income
-            self.rmd_paths[path_index, i] = rmd_income
+            annual_rmd_required = self.accounts_income.compute_rmds(current_accounts, current_year)
+            self.rmd_paths[path_index, i] = annual_rmd_required
+            AGI += annual_rmd_required
             
             # Pension/Def457b Income
-            pension_income = self._get_pension_benefit(current_year, current_inflation_index)
-            def457b_income = self._get_def457b_income(current_year, current_inflation_index)
+            pension_income = self.accounts_income.compute_pension_income(current_year, current_inflation_index)
+            def457b_income = self.accounts_income.compute_def457b_income(current_accounts, current_year)
             AGI += pension_income + def457b_income
             self.pension_paths[path_index, i] = pension_income
             self.def457b_income_paths[path_index, i] = def457b_income
             
             # Social Security Income
-            ss_benefit = self._get_social_security_benefit(current_year, current_inflation_index)
-            ss_taxable, ss_non_taxable = self._calculate_taxable_ss(ss_benefit, AGI) 
+            ss_benefit = self.accounts_income.compute_ss_benefit(current_year, current_inflation_index)
+            ss_taxable = self.accounts_income.compute_taxable_ss(ss_benefit, AGI, self.inputs.filing_status) 
             AGI += ss_taxable # Taxable portion of SS contributes to AGI
             self.ssbenefit_paths[path_index, i] = ss_benefit # Save full benefit amount
+            # =========================================================================
+            # --- STEP 2: ROTH CONVERSION OPTIMIZATION (Ground Truth Logic) ---
+            # =========================================================================
+            # We must process conversions sequentially (e.g., Person 2 then Person 1)
+            # because the first conversion increases the AGI for the second person.
             
-            # --- STEP 2: ROTH CONVERSION OPTIMIZATION ---
+            total_conversion_this_year = 0.0
             
-            conversion_amount = optimal_roth_conversion(
-                year=current_year,
-                inflation_index=current_inflation_index,
-                AGI_base=AGI, # AGI before conversion
-                accounts=current_accounts,
-                tax_strategy=self.tax_strategy,
-                irmaa_strategy=self.irmaa_strategy,
-                filing_status=self.filing_status # FIXED: Passed filing status
-            )
+            # --- Person 2 Conversion ---
+            p2_trad_accts = [k for k, v in current_accounts.items() 
+                             if v.get("owner") == "person2" and v.get("tax") == "traditional"]
+            p2_trad_bal = sum(current_accounts[k]["balance"] for k in p2_trad_accts)
             
-            # Execute conversion (removes from Traditional, adds to Roth, increases AGI)
-            current_accounts.setdefault("Traditional", {"balance": 0.0})["balance"] = max(0, current_accounts.get("Traditional", {}).get("balance", 0.0) - conversion_amount)
-            current_accounts.setdefault("Roth", {"balance": 0.0})["balance"] += conversion_amount
-            AGI += conversion_amount
-            self.conversion_paths[path_index, i] = conversion_amount
+            conv_p2 = 0.0
+            if p2_trad_bal > 0:
+                conv_p2 = optimal_roth_conversion(
+                    year=current_year,
+                    inflation_index=current_inflation_index,
+                    filing_status=self.filing_status,
+                    AGI_base=AGI, # Current AGI
+                    traditional_balance=p2_trad_bal,
+                    tax_strategy=self.tax_strategy,
+                    irmaa_strategy=self.irmaa_strategy
+                )
+                
+            # Execute Person 2 Conversion (Pro-rata across their traditional accounts)
+            if conv_p2 > 0:
+                # Find destination Roth (use first found or create new)
+                p2_roth_targets = [k for k, v in current_accounts.items() 
+                                   if v.get("owner") == "person2" and v.get("tax") == "roth"]
+                target_roth = p2_roth_targets[0] if p2_roth_targets else None
+                
+                # If no Roth exists for Person 2, we technically can't convert 
+                # (or we'd need to spawn a new account). For now, skip if no target.
+                if target_roth:
+                    remaining_to_convert = conv_p2
+                    for name in p2_trad_accts:
+                        if remaining_to_convert <= 0: break
+                        bal = current_accounts[name]["balance"]
+                        if bal <= 0: continue
+                        
+                        # Pro-rata-ish: drain accounts in order until amount met
+                        amount = min(bal, remaining_to_convert)
+                        current_accounts[name]["balance"] -= amount
+                        current_accounts[target_roth]["balance"] += amount
+                        remaining_to_convert -= amount
+                    
+                    # Update AGI for Person 1's calculation
+                    AGI += conv_p2
+                    total_conversion_this_year += conv_p2
+
+            # --- Person 1 Conversion ---
+            p1_trad_accts = [k for k, v in current_accounts.items() 
+                             if v.get("owner") == "person1" and v.get("tax") == "traditional"]
+            p1_trad_bal = sum(current_accounts[k]["balance"] for k in p1_trad_accts)
             
+            conv_p1 = 0.0
+            if p1_trad_bal > 0:
+                conv_p1 = optimal_roth_conversion(
+                    year=current_year,
+                    inflation_index=current_inflation_index,
+                    filing_status=self.filing_status,
+                    AGI_base=AGI, # AGI is now higher due to P2's conversion
+                    traditional_balance=p1_trad_bal,
+                    tax_strategy=self.tax_strategy,
+                    irmaa_strategy=self.irmaa_strategy
+                )
+
+            # Execute Person 1 Conversion
+            if conv_p1 > 0:
+                p1_roth_targets = [k for k, v in current_accounts.items() 
+                                   if v.get("owner") == "person1" and v.get("tax") == "roth"]
+                target_roth = p1_roth_targets[0] if p1_roth_targets else None
+                
+                if target_roth:
+                    remaining_to_convert = conv_p1
+                    for name in p1_trad_accts:
+                        if remaining_to_convert <= 0: break
+                        bal = current_accounts[name]["balance"]
+                        if bal <= 0: continue
+                        
+                        amount = min(bal, remaining_to_convert)
+                        current_accounts[name]["balance"] -= amount
+                        current_accounts[target_roth]["balance"] += amount
+                        remaining_to_convert -= amount
+                    
+                    AGI += conv_p1
+                    total_conversion_this_year += conv_p1
+
+            self.conversion_paths[path_index, i] = total_conversion_this_year
+            # =========================================================================
             # --- STEP 3: TAX CALCULATION ---
-            
+            # =========================================================================
             MAGI = AGI # Simplified: MAGI is often close to AGI, conversion is included.
             
             # Get MAGI from 2 years prior for IRMAA calculation (offset by 2)
@@ -183,31 +384,128 @@ class RetirementSimulator:
                 qualified_dividends=0.0, 
                 social_security_income=ss_benefit,
             )
-            
-            # --- STEP 4: WITHDRAWALS AND EXPENSES ---
-            
-            cash_needed = self._get_cash_needed(current_year, current_inflation_index)
-            cash_needed += total_taxes 
-            
-            withdrawal_order = self._get_withdrawal_order(current_year)
-            # ordinary_w and ltcg_w are not used for taxes in this loop (only in dry-run)
-            ordinary_w, ltcg_w = self._execute_withdrawals(current_accounts, cash_needed, withdrawal_order)
-            self.portfolio_withdrawal_paths[path_index, i] = cash_needed
-
-            # --- STEP 5: END-OF-YEAR PORTFOLIO GROWTH ---
-            self._apply_market_returns(current_accounts, market_path[i])
-            
-            # --- STEP 6: SAVE PATH DATA ---
-            self.portfolio_paths[path_index, i] = self._get_total_portfolio(current_accounts)
+# ... after Step 3: TAX CALCULATION ...
             self.taxes_paths[path_index, i] = total_taxes
-            self.magi_paths[path_index, i] = MAGI
             self.medicare_paths[path_index, i] = medicare_irmaa
+            magi_path[year_index + 2] = MAGI 
+
+            # =========================================================================
+            # --- STEP 4: DETERMINE ANNUAL WITHDRAWAL NEED ---
+            # =========================================================================
+            # This calculates the total cash DESIRED/REQUIRED from the portfolio for the year.
+
+            (total_fixed_expenses, 
+             annual_base_spending, 
+             annual_lumpy_needs, 
+             annual_home_repair,
+             annual_travel_desired, 
+             annual_gifting_desired) = self._calculate_annual_spending_needs(
+                current_year, 
+                current_inflation_index
+            )
+            
+            # Save expense paths (Store actual/desired amounts as determined by the planner)
+            # NOTE: If your optimizer cuts travel/gifting, you must update these paths in STEP 6.
+            self.base_spending_paths[path_index, i] = annual_base_spending
+            self.lumpy_spending_paths[path_index, i] = annual_lumpy_needs
+            self.travel_paths[path_index, i] = annual_travel_desired
+            self.gifting_paths[path_index, i] = annual_gifting_desired
+            # You may also need a home_repair_paths
+
+            # Total desired cash for the year (Fixed Expenses + Desired Adjustable + Taxes)
+            total_annual_withdrawal_needed = (
+                total_fixed_expenses + 
+                annual_travel_desired + 
+                annual_gifting_desired + 
+                total_taxes
+            )
+
+            # Cash from non-portfolio sources (Pension, SS, Def457b)
+            total_annual_cash_in = (
+                pension_income + 
+                def457b_income + 
+                ss_benefit
+            )
+
+            # The net amount to be pulled from the portfolio to cover the gap
+            annual_portfolio_draw_needed = max(0.0, total_annual_withdrawal_needed - total_annual_cash_in)
+            self.portfolio_withdrawal_paths[path_index, i] = annual_portfolio_draw_needed
+            
+            # =========================================================================
+            # --- STEP 5: QUARTERLY WITHDRAWAL AND INVESTMENT RETURNS ---
+            # =========================================================================
+
+            # Annual amounts are divided into four equal quarterly amounts
+            quarterly_rmd_draw = annual_rmd_required / 4.0
+            quarterly_portfolio_draw_needed = annual_portfolio_draw_needed / 4.0
+            
+            # Get the four quarterly returns for the current year
+            eq_q_returns = equity_q_path[i*4 : (i+1)*4]
+            bond_q_returns = bond_q_path[i*4 : (i+1)*4]
+
+            # Track actual tax character of portfolio withdrawals for final MAGI/tax adjustment
+            final_ordinary_income_actual = 0.0
+            final_ltcg_income_actual = 0.0
+            
+            # Hardcoded withdrawal order (from withdrawal_engine.py snippet)
+            withdrawal_order = ["taxable", "trust", "inherited", "traditional", "roth"] 
+
+            for q in range(4): 
+                
+                # Total cash needed from portfolio draw (includes the RMD)
+                quarterly_total_draw = quarterly_portfolio_draw_needed + quarterly_rmd_draw
+                
+                # Execute the withdrawal, modifying current_accounts in place
+                # Assumes self.accounts_income is an instance of a class that contains _withdraw_from_hierarchy
+                withdrawal_result = self.accounts_income._withdraw_from_hierarchy(
+                    cash_needed=quarterly_total_draw, 
+                    accounts_bal=current_accounts, 
+                    order=withdrawal_order,
+                )
+
+                final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
+                final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
+                
+                # Apply Quarterly Investment Returns (using separate asset classes)
+                market_return_eq = eq_q_returns[q] 
+                market_return_bond = bond_q_returns[q]
+
+                for name in current_accounts.keys():
+                    acct = current_accounts[name]
+                    
+                    # Portfolio Blending (Assumes a 70/30 allocation if not specified in account)
+                    # NOTE: This must be properly configured from your inputs
+                    equity_pct = acct.get('equity_pct', 0.7) 
+                    bond_pct = 1.0 - equity_pct
+                    
+                    # Calculate blended return for the account
+                    blended_q_return = (
+                        equity_pct * market_return_eq + 
+                        bond_pct * market_return_bond
+                    )
+
+                    # Apply return to remaining balance
+                    acct['balance'] *= (1 + blended_q_return)
+                    
+                    # Basis tracking: Apply return to basis for taxable accounts
+                    if acct.get('tax') == 'taxable':
+                        # Basis grows with the market return for taxable accounts
+                        basis_growth = acct.get('basis', 0.0) * blended_q_return
+                        acct['basis'] = acct.get('basis', 0.0) + basis_growth
+
+            # =========================================================================
+            # --- STEP 6: POST-QUARTERLY CLEANUP AND SAVE DATA ---
+            # =========================================================================
+            
+           # Final Portfolio Balance
+            self.portfolio_paths[path_index, i] = self._get_total_portfolio(current_accounts)
             
             # Save the final account state for the year
             self.account_paths[path_index][i] = copy.deepcopy(current_accounts)
 
-            # Update MAGI history for the next iteration's IRMAA calculation
-            magi_path[year_index + 2] = MAGI
+            # NOTE: Final adjustment of MAGI and taxes based on actual withdrawals (ordinary_income_actual)
+            # and re-running the Roth conversion logic may occur here or in Step 2.
+            # Assuming the loop continues to the next year (i+1).
 
 
     # =========================================================================
@@ -222,18 +520,28 @@ class RetirementSimulator:
             acct.setdefault("basis", 0.0)
             acct.setdefault("tax", "traditional")
             acct.setdefault("owner", "person1")
-            acct.setdefault("start_age", 60)
-            acct.setdefault("drawdown_years", 5)
             acct.setdefault("mandatory_yield", 0.0)
             acct.setdefault("ordinary_pct", 0.1)
 
     def _get_total_portfolio(self, accounts: Dict) -> float:
         return sum(acct.get("balance", 0.0) for acct in accounts.values())
 
-    def _generate_market_path(self) -> List[float]:
-        """One path of annual portfolio returns using market_generator."""
-        eq_q, bond_q, _ = generate_returns(
-            n_full=self.num_years,
+    def _generate_market_path(self) -> Tuple[List[float], List[float]]:
+        """
+        One path of *quarterly* portfolio returns using market_generator.
+        Returns separate lists for Equity and Bond quarterly returns.
+        """
+        from config.market_assumptions import (
+            corr_matrix, initial_equity_mu, long_term_equity_mu,
+            initial_equity_sigma, long_term_equity_sigma, initial_bond_mu, 
+            long_term_bond_mu, initial_bond_sigma, long_term_bond_sigma, 
+            initial_inflation_mu, long_term_inflation_mu, 
+            initial_inflation_sigma, long_term_inflation_sigma
+        )
+        
+        # NOTE: generate_returns returns three arrays (Equity, Bond, Inflation)
+        eq_q, bond_q, _ = generate_returns( 
+            n_full=self.num_years, 
             nsims=1,
             corr_matrix=corr_matrix,
             initial_equity_mu=initial_equity_mu,
@@ -249,10 +557,11 @@ class RetirementSimulator:
             initial_inflation_sigma=initial_inflation_sigma,
             long_term_inflation_sigma=long_term_inflation_sigma,
         )
-        # 70/30 blend → annual returns
-        annual = 0.7 * eq_q[0, ::4] + 0.3 * bond_q[0, ::4]
-        return annual.tolist()
-
+        
+        # Explicitly return a tuple of two lists, ensuring two items are unpacked.
+        # [0, :] flattens the (1, N) array into a 1D array before converting to a list.
+        return (eq_q[0, :].tolist(), bond_q[0, :].tolist())
+    
     def _generate_inflation_path(self) -> List[float]:
         """One path of cumulative inflation index."""
         _, _, infl_q = generate_returns(
@@ -362,6 +671,77 @@ class RetirementSimulator:
             if "balance" in acct:
                 acct["balance"] *= (1 + market_return)
 
+    def _calculate_annual_spending_needs(self, 
+        current_year: int, 
+        inflation_index: float) -> Tuple[float, float, float, float, float, float]:
+        """
+        Calculates total annual expenses (fixed and adjustable).
+        
+        Returns: 
+            (total_fixed_expenses, annual_base_spending, 
+             annual_lumpy_needs, annual_home_repair, 
+             annual_travel_desired, annual_gifting_desired)
+        """
+        
+        from config.expense_assumptions import (
+            mortgage_payoff_year, mortgage_monthly_until_payoff,
+            property_tax_and_insurance, car_replacement_cycle,
+            car_cost_today, lumpy_expenses,
+            home_repair_prob, home_repair_mean, home_repair_shape,
+        )
+        
+        # 1. Base Spending (Inflation-Adjusted)
+        annual_base_spending = self.base_annual_spending * inflation_index
+        
+        # 2. Housing/Fixed Expenses (Mortgage is fixed, P&T is inflation-adjusted)
+        mortgage_expense = 0.0
+        if current_year <= mortgage_payoff_year:
+            mortgage_expense = mortgage_monthly_until_payoff 
+            
+        property_and_tax = property_tax_and_insurance * inflation_index 
+
+        # 3. Lumpy Expenses (Check against configuration list)
+        annual_lumpy_needs = 0.0
+        for item in lumpy_expenses:
+            if item.get("year") == current_year:
+                annual_lumpy_needs += item.get("amount", 0.0) * inflation_index 
+                
+        # 4. Car Replacement (Every 'car_replacement_cycle' years, inflated)
+        car_expense = 0.0
+        years_since_start = current_year - self.current_year
+        if years_since_start % car_replacement_cycle == 0 and years_since_start >= 0:
+            car_expense = car_cost_today * inflation_index
+            
+        # 5. Stochastic Home Repair (Restored Logic)
+        annual_home_repair = 0.0
+        if self.rng.random() < home_repair_prob:
+            # Draw from log-normal distribution (requires self.rng to be a seeded generator)
+            mu_log = np.log(home_repair_mean) - (home_repair_shape ** 2) / 2
+            annual_home_repair = self.rng.lognormal(mu_log, home_repair_shape) * inflation_index
+        
+        # TOTAL FIXED EXPENSES (Required draw from portfolio/cash flow)
+        total_fixed_expenses = (
+            annual_base_spending +
+            mortgage_expense +
+            property_and_tax +
+            annual_lumpy_needs +
+            car_expense +
+            annual_home_repair
+        )
+        
+        # 6. Discretionary Spending (Dynamically Adjustable to manage tax/IRMAA)
+        # These are the DESIRED amounts, which may be cut by the planner (Step 2/3)
+        annual_travel_desired = self.travel * inflation_index
+        annual_gifting_desired = self.gifting * inflation_index
+        
+        return (
+            total_fixed_expenses, 
+            annual_base_spending, 
+            annual_lumpy_needs, 
+            annual_home_repair,
+            annual_travel_desired, 
+            annual_gifting_desired
+        )
 
     # =========================================================================
     # 4. RESULTS SUMMARIZER
@@ -400,12 +780,13 @@ class RetirementSimulator:
                 "plan_paths": np.array([]),
              }
 
-        threshold = self.target_portfolio_value 
+        success = self.inputs.success_threshold
+        avoud_ruin = self.inputs.avoid_ruin_threshold
         portfolio_end = self.portfolio_paths[:, -1]
         
-        success_rate = np.mean(portfolio_end > threshold) * 100
+        success_rate = np.mean(portfolio_end > success) * 100
         minimum_annual_balance = np.min(self.portfolio_paths, axis=1)
-        avoid_ruin_rate = np.mean(minimum_annual_balance > 0.0) * 100
+        avoid_ruin_rate = np.mean(minimum_annual_balance > avoid_ruin) * 100
         
         # --- START FIX: Transpose account_paths and filter to XML-defined names ---
         num_paths, num_years = self.portfolio_paths.shape

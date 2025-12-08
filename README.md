@@ -1,2 +1,0 @@
-# RetirementMC
-Retirement Monte Carlo

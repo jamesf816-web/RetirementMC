@@ -49,9 +49,14 @@ def register_simulation_callbacks(app):
         State("gifting", "value"),
         State("tax_strategy", "value"),
         State("irmaa_strategy", "value"),
+        State("success_threshold", "value"),
+        State("avoid_ruin_threshold", "value"),
+        State("ss_fail_year", "value"),
+        State("ss_fail_percent", "value"),
+
         prevent_initial_call=True
     )
-    def run_simulation(n_clicks, n_sims, base_spending, withdrawal_rate, portfolio_rows, max_roth, travel, gifting, tax_strategy, irmaa_strategy):
+    def run_simulation(n_clicks, n_sims, base_spending, withdrawal_rate, portfolio_rows, max_roth, travel, gifting, tax_strategy, irmaa_strategy, success_threshold, avoid_ruin_threshold, ss_fail_year, ss_fail_percent):
         from models import PlannerInputs
         if not n_clicks:
             return no_update
@@ -71,7 +76,9 @@ def register_simulation_callbacks(app):
                 travel=clean_currency(travel),
                 gifting=clean_currency(gifting),
                 tax_strategy=tax_strategy,
-                irmaa_strategy=irmaa_strategy
+                irmaa_strategy=irmaa_strategy,
+                ss_fail_year=ss_fail_year,
+                ss_fail_percent=ss_fail_percent,
             )
 
             sim = RetirementSimulator(inputs)   # ← fresh every time

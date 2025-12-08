@@ -35,7 +35,8 @@ def pretty_currency_input(id, value, label=None, min_val=None, max_val=None, ste
                 label_text, 
                 style={
                     'fontWeight': 'bold', 
-                    'fontSize': 16, 
+                    'fontSize': 16,
+                    'textAlign': 'center',
                     'marginBottom': '6px',
                     'display': 'block'
                 }
@@ -127,7 +128,8 @@ def pretty_percent_input(id, value, label=None, min_val=None, max_val=None, step
                 label_text, 
                 style={
                     'fontWeight': 'bold', 
-                    'fontSize': 16, 
+                    'fontSize': 16,
+                    'textAlign': 'center',
                     'marginBottom': '6px',
                     'display': 'block'
                 }

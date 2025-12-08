@@ -24,8 +24,6 @@
         <bond>0.75</bond>
         <tax>def457b</tax>
         <owner>person1</owner>
-        <start_age>60</start_age>
-        <drawdown_years>5</drawdown_years>
     </account>
 
     <account name="Taxable">
