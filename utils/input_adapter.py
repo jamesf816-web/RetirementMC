@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 
 def get_planner_inputs(
     portfolio_data: List[Dict], # Only list arguments that need special processing
-    **kwargs: Any              # Catch all other UI inputs dynamically
+    **kwargs: Any               # Catch all other UI inputs dynamically
 ) -> PlannerInputs:
     """
     Dynamically generates PlannerInputs by merging XML defaults and all UI inputs,
@@ -36,8 +36,11 @@ def get_planner_inputs(
                 "bond": row.get("bond", 0.3),
                 "tax": row.get("tax", "traditional"),
                 "owner": row.get("owner", "person1"),
-                "basis": row.get("basis", 0.0),
-                "rmd_factor_table": row.get("rmd_factor_table"),
+                "basis": row.get("basis", 1.0),
+                "income": row.get("income", 0.015),
+                "death_year": row.get("death_year", 2012),
+                "death_month": row.get("death_month", 12),
+                "decedent_started_rmds": row.get("decedent_started_rmds", True),
             }
     inputs_dict["accounts"] = accounts
 

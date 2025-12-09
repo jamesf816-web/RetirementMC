@@ -30,9 +30,9 @@ def get_default_portfolio_data() -> Dict[str, Dict]:
         print(f"ERROR: Default portfolio XML file not found at {DEFAULT_PORTFOLIO_XML_PATH}. Returning fallback data.")
         # Fallback to a hardcoded structure (matching the mock data) if the file is missing/inaccessible
         return {
-            "Roth_IRA": {"balance": 50000, "equity": 0.80, "bond": 0.20, "tax": "roth", "owner": "person1", "basis": None, "mandatory_yield": None, "rmd_factor_table": None},
-            "401k": {"balance": 200000, "equity": 0.70, "bond": 0.30, "tax": "traditional", "owner": "person1", "basis": None, "mandatory_yield": None, "rmd_factor_table": None},
-            "Taxable_Brokerage": {"balance": 150000, "equity": 0.90, "bond": 0.10, "tax": "taxable", "owner": "person1", "basis": 150000, "mandatory_yield": None, "rmd_factor_table": None},
+            "Roth_IRA": {"balance": 50000, "equity": 0.80, "bond": 0.20, "tax": "roth", "owner": "person1"},
+            "Inherited_IRA": {"balance": 200000, "equity": 0.70, "bond": 0.30, "tax": "inherited", "owner": "person1", "basis": None, "income": None, "death_year": None, "death_month": None, "decedent_started_rmds": None},
+            "Taxable_Brokerage": {"balance": 150000, "equity": 0.90, "bond": 0.10, "tax": "taxable", "owner": "person1", "basis": 150000},
         }
 
 
@@ -146,7 +146,7 @@ def register_editor_callbacks(app):
             "tax": "traditional",
             "owner": "person1",
             "basis": None,
-            "mandatory_yield": None,
+            "income": None,
             "rmd_factor_table": None
         }
         return current_rows + [new_row]

@@ -171,7 +171,7 @@ def calculate_taxes(
     year: int,
     inflation_index: float,
     filing_status: TaxFilingStatus,
-    state_of_residence: str,                 # NEW INPUT
+    state_of_residence: str, 
     age1: int,
     age2: int,
     magi_two_years_ago: float,
@@ -250,3 +250,58 @@ def calculate_taxes(
     total_tax_owed = federal_tax + state_tax + medicare_irmaa
     
     return total_tax_owed, federal_tax, medicare_irmaa
+
+def get_effective_marginal_rates(
+    year: int,
+    income: float,
+    filing_status: TaxFilingStatus,
+    state_of_residence: str,
+    age1: int = 0,
+    age2: int = None,
+    inflation_index: float = 1.0,
+) -> Tuple[float, float]:
+    """
+    Estimates the federal and state marginal tax rates for a given income in a given year.
+    Uses your indexed federal constants and state tax functions.
+    """
+
+    # 1. Fetch federal constants
+    constants = get_indexed_federal_constants(year, inflation_index, filing_status)
+
+    # 2. Federal Marginal Rate
+    # Loop through federal ordinary brackets to find the bracket for 'income'
+    federal_rate = 0.0
+    remaining_income = income
+    for low, high, rate in constants["ord_list"]:
+        if remaining_income <= 0:
+            break
+        if low <= income <= high or (np.isinf(high) and income >= low):
+            federal_rate = rate
+            break
+
+    # 3. State Marginal Rate
+    state_of_residence = state_of_residence.strip().upper()
+    state_rate = 0.0
+
+    if state_of_residence == "VA":
+        # Loop VA brackets
+        taxable_va = max(0, income - (VA_SD_MFJ + (2 if filing_status == "married_joint" else 1) * VA_PE_PER_PERSON))
+        for low, high, rate in VA_TAX_BRACKETS:
+            if taxable_va <= 0:
+                break
+            if low <= income <= high or (np.isinf(high) and income >= low):
+                state_rate = rate
+                break
+    elif state_of_residence == "ME":
+        taxable_me = max(0, income - ME_SD_2026.get(filing_status, ME_SD_2026["married_joint"]) * inflation_index)
+        me_brackets = ME_TAX_BRACKETS.get(filing_status, ME_TAX_BRACKETS["married_joint"])
+        for low, high, rate in me_brackets:
+            low_inf = low * inflation_index
+            high_inf = high * inflation_index if np.isfinite(high) else np.inf
+            if low_inf <= income <= high_inf:
+                state_rate = rate
+                break
+    else:
+        state_rate = 0.0
+
+    return federal_rate, state_rate

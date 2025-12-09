@@ -1,5 +1,5 @@
 <setup>
-    <current_year>2025</current_year>
+    <current_year>2026</current_year>
     <end_age>100</end_age>
     
     <filing_status>mjf</filing_status>
@@ -28,7 +28,7 @@
         <pension_amount>2653.83</pension_amount>
 	<pension_cola>False</pension_cola>
 	<def457b_age_years>59</def457b_age_years>
-	<def457b_age_months>59</def457b_age_months>
+	<def457b_age_months>0</def457b_age_months>
 	<def457b_drawdown_months>60</def457b_drawdown_months>
     </person1>
 
@@ -45,9 +45,9 @@
         <pension_age_months>0</pension_age_months>
         <pension_amount>0</pension_amount>
 	<pension_cola>False</pension_cola>
-	<def457b_age_years>59</def457b_age_years>
-	<def457b_age_months>59</def457b_age_months>
-	<def457b_drawdown_months>60</def457b_drawdown_months>
+	<def457b_age_years>100</def457b_age_years>
+	<def457b_age_months>0</def457b_age_months>
+	<def457b_drawdown_months>12</def457b_drawdown_months>
     </person2>
 
 </setup>

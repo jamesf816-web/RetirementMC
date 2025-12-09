@@ -61,7 +61,8 @@ class PlannerInputs:
     
     nsims: int
     tax_strategy: str
-    irmaa_strategy: str
+    roth_tax_bracket: str
+    roth_irmaa_threshold: str
     max_roth: float
     base_annual_spending: float
     withdrawal_rate: float

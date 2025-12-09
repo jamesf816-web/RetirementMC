@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Any
 
 # --- Utilities and Models ---
 from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+from utils.currency import clean_percent
 from models import PlannerInputs
 
 # --- Configuration Imports
@@ -45,13 +46,12 @@ from config.market_assumptions import (
 )
 
 from engine.rmd_tables import get_rmd_factor
-from engine.def457b_tables import get_def457b_factor
 from engine.roth_optimizer import optimal_roth_conversion
 
 from engine.accounts_income import AccountsIncomeEngine # importing a class here
+from engine.withdrawal_engine import WithdrawalEngine # importing a class here
 
-from engine.tax_planning import estimate_taxable_gap
-from engine.tax_engine import calculate_taxes
+from engine.tax_engine import calculate_taxes, get_effective_marginal_rates
 from engine.market_generator import generate_returns, calculate_annual_inflation
         
 class RetirementSimulator:
@@ -115,7 +115,6 @@ class RetirementSimulator:
         # and initializes them to numpy arrays of zeros.
         self.portfolio_paths = None
         self.conversion_paths = None
-        self.account_paths = None
         self.plan_paths = None
         self.taxes_paths = None
         self.magi_paths = None
@@ -130,6 +129,8 @@ class RetirementSimulator:
         self.medicare_paths = None
         self.gifting_paths = None
         self.travel_paths = None
+
+        self.account_paths = None
 
         self.debug_log = []
 
@@ -149,40 +150,16 @@ class RetirementSimulator:
         # Link the inputs object to the engine, which is necessary for the engine's methods 
         # (e.g., compute_rmds, compute_pension_income) to access parameters like birth years, etc.
         self.accounts_income.inputs = self.inputs
-
-        #total_years_in_array = self.num_years + 2 # Includes Year -2, Year -1, Year 0 (Current Year), ..., Year N-1
         
-        # Initialize storage arrays 
-        self.portfolio_paths = None
-        self.conversion_paths = None
-        self.account_paths = None
-        self.plan_paths = None
-        self.taxes_paths = None
-        self.magi_paths = None
-        self.base_spending_paths = None
-        self.lumpy_spending_paths = None
-        self.ssbenefit_paths = None
-        self.portfolio_withdrawal_paths = None
-        self.trust_income_paths = None
-        self.rmd_paths = None
-        self.def457b_income_paths = None
-        self.pension_paths = None
-        self.medicare_paths = None
-        self.gifting_paths = None
-        self.travel_paths = None 
 
-        self.debug_log = []
-
-        self.accounts_income = AccountsIncomeEngine(
-            years=self.years,
-            num_sims=self.nsims,
+        # -----------------------
+        # STEP 6: Instantiate a WithdrawalEngine in your simulator
+        # -----------------------
+        self.withdrawal_engine = WithdrawalEngine(
             inputs=self.inputs,
-            annual_inflation=None, 
-            ages_person1=self.person1_ages,
-            ages_person2=self.person2_ages,
-            return_trajectories=True
+            accounts_metadata=self.initial_accounts  # metadata for account types, basis, ordinary_pct, etc.
         )
-        self.accounts_income.inputs = self.inputs
+
     # =========================================================================
     # 1. CORE SIMULATION RUNNER
     # =========================================================================
@@ -191,29 +168,28 @@ class RetirementSimulator:
         num_paths = self.nsims
         num_years = self.num_years
         
-        # Initialize storage arrays (restored based on original snippet)
-        self.portfolio_paths = np.zeros((num_paths, num_years))
-        self.conversion_paths = np.zeros((num_paths, num_years))
-        self.taxes_paths = np.zeros((num_paths, num_years))
-        self.magi_paths = np.zeros((num_paths, num_years))
-        self.base_spending_paths = np.zeros((num_paths, num_years))
-        self.lumpy_spending_paths = np.zeros((num_paths, num_years))
-        self.ssbenefit_paths = np.zeros((num_paths, num_years))
-        self.portfolio_withdrawal_paths = np.zeros((num_paths, num_years))
-        self.trust_income_paths = np.zeros((num_paths, num_years))
-        self.rmd_paths = np.zeros((num_paths, num_years))
-        self.def457b_income_paths = np.zeros((num_paths, num_years))
-        self.pension_paths = np.zeros((num_paths, num_years))
-        self.medicare_paths = np.zeros((num_paths, num_years))
-        self.gifting_paths = np.zeros((num_paths, num_years))
-        self.travel_paths = np.zeros((num_paths, num_years))
+        # Initialize storage arrays
+        # n_full includes 2 prior years to initialize MAGI, portfolio data
+        self.portfolio_paths = np.zeros((num_paths, self.n_full))
+        self.conversion_paths = np.zeros((num_paths, self.n_full))
+        self.plan_paths = np.zeros((num_paths, self.n_full))
+        self.taxes_paths = np.zeros((num_paths, self.n_full))
+        self.magi_paths = np.zeros((num_paths, self.n_full))
+        self.base_spending_paths = np.zeros((num_paths, self.n_full))
+        self.lumpy_spending_paths = np.zeros((num_paths, self.n_full))
+        self.ssbenefit_paths = np.zeros((num_paths, self.n_full))
+        self.portfolio_withdrawal_paths = np.zeros((num_paths, self.n_full))
+        self.trust_income_paths = np.zeros((num_paths, self.n_full))
+        self.rmd_paths = np.zeros((num_paths, self.n_full))
+        self.def457b_income_paths = np.zeros((num_paths, self.n_full))
+        self.pension_paths = np.zeros((num_paths, self.n_full))
+        self.medicare_paths = np.zeros((num_paths, self.n_full))
+        self.gifting_paths = np.zeros((num_paths, self.n_full))
+        self.travel_paths = np.zeros((num_paths, self.n_full))
 
         # Account paths stores the *final* account balance structure for each path/year
-        self.account_paths = [[None] * num_years for _ in range(num_paths)] 
+        self.account_paths = [[None] * self.n_full for _ in range(num_paths)] 
         
-        # The remaining arrays (e.g., plan_paths, base_spending_paths) should be initialized here 
-        # if they are guaranteed to be returned by _summarize_results
-
         for path_index in range(num_paths):
             self._run_one_path(path_index)
 
@@ -226,12 +202,16 @@ class RetirementSimulator:
     def _run_one_path(self, path_index: int):
         """Runs a single simulation path."""
         
-        print(f">>> STARTING PATH {path_index} <<<")
+        if path_index % 100 == 0:
+            print(f">>> STARTING PATH {path_index} <<<")
         
         # Initialize state for this path
         current_accounts = copy.deepcopy(self.initial_accounts)
 
         annual_rmd_required = 0.0   # This year's total RMD (calculated once, drawn quarterly)
+        final_ordinary_income_actual = 0.0
+        total_taxes_final = 0.0
+        spend_plan = 0.0
         
         # Initialize path-specific history arrays
         # MAGI history needs to be long enough to track 2 years prior for IRMAA (index offset)
@@ -240,15 +220,26 @@ class RetirementSimulator:
         equity_q_path, bond_q_path = self._generate_market_path()
 
         inflation_path = self._generate_inflation_path()
-        inflation_path = self._generate_inflation_path()
+        
+        # --- PRE-SIMULATION SEED ---
+        # Index 0 -> 2024 (initial_accounts)
+        self.portfolio_paths[path_index, 0] = self._get_total_portfolio(self.initial_accounts)
+        self.account_paths[path_index][0] = copy.deepcopy(self.initial_accounts)
+        self.magi_paths[path_index, 0] = self.inputs.magi_1  # MAGI1
+
+        # Index 1 -> 2025 (input accounts)
+        self.portfolio_paths[path_index, 1] = self._get_total_portfolio(self.inputs.accounts)
+        self.account_paths[path_index][1] = copy.deepcopy(self.inputs.accounts)
+        self.magi_paths[path_index, 1] = self.inputs.magi_2  # MAGI2
         
         for i in range(self.num_years):
-            year_index = i
+            year_index = i + 2 #start simulations at index 2
             current_year = self.current_year + i
             current_inflation_index = inflation_path[i]
             # Update ages
             current_age_person1 = self.current_age_p1 + i
-            current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else None
+            current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else Nonne
+
             # =========================================================================
             # --- STEP 1: CALCULATE ANNUAL INCOME AND RMDs ---
             # =========================================================================
@@ -256,119 +247,90 @@ class RetirementSimulator:
             AGI = 0.0
              
             # RMDs (Required Minimum Distributions)
-            annual_rmd_required = self.accounts_income.compute_rmds(current_accounts, current_year)
-            self.rmd_paths[path_index, i] = annual_rmd_required
+            # Unpack the total RMD for AGI and the dictionary for quarterly withdrawals.
+            annual_rmd_required, rmds_by_account_annual = self.accounts_income.compute_rmds(
+                current_accounts, 
+                current_year
+            )
+            # Store the total annual RMD amount for the path
+            self.rmd_paths[path_index, year_index] = annual_rmd_required
             AGI += annual_rmd_required
             
             # Pension/Def457b Income
             pension_income = self.accounts_income.compute_pension_income(current_year, current_inflation_index)
             def457b_income = self.accounts_income.compute_def457b_income(current_accounts, current_year)
-            AGI += pension_income + def457b_income
-            self.pension_paths[path_index, i] = pension_income
-            self.def457b_income_paths[path_index, i] = def457b_income
+            
+            # Trust Income (New Addition)
+            trust_income = self.accounts_income.compute_trust_income(
+                current_accounts, 
+                current_year, 
+                current_inflation_index
+            )
+            
+            # Add all fully taxable (Ordinary) income sources to AGI
+            AGI += pension_income + def457b_income + trust_income
+            
+            # Save paths for tracking/reporting
+            self.pension_paths[path_index, year_index] = pension_income
+            self.def457b_income_paths[path_index, year_index] = def457b_income
+            self.trust_income_paths[path_index, year_index] = trust_income
             
             # Social Security Income
             ss_benefit = self.accounts_income.compute_ss_benefit(current_year, current_inflation_index)
             ss_taxable = self.accounts_income.compute_taxable_ss(ss_benefit, AGI, self.inputs.filing_status) 
             AGI += ss_taxable # Taxable portion of SS contributes to AGI
-            self.ssbenefit_paths[path_index, i] = ss_benefit # Save full benefit amount
-            # =========================================================================
-            # --- STEP 2: ROTH CONVERSION OPTIMIZATION (Ground Truth Logic) ---
-            # =========================================================================
-            # We must process conversions sequentially (e.g., Person 2 then Person 1)
-            # because the first conversion increases the AGI for the second person.
-            
-            total_conversion_this_year = 0.0
-            
-            # --- Person 2 Conversion ---
-            p2_trad_accts = [k for k, v in current_accounts.items() 
+            self.ssbenefit_paths[path_index, year_index] = ss_benefit # Save full benefit amount
+
+            # ----------------------------
+            # STEP 2 - PLAN ROTH conversions (do NOT mutate accounts here)
+            # ----------------------------
+            # Determine planned conversion amounts (use your existing optimizer)
+            total_conversion_plan = 0.0
+
+            # Person 2 planned conversion
+            p2_trad_accts = [k for k, v in current_accounts.items()
                              if v.get("owner") == "person2" and v.get("tax") == "traditional"]
             p2_trad_bal = sum(current_accounts[k]["balance"] for k in p2_trad_accts)
-            
             conv_p2 = 0.0
             if p2_trad_bal > 0:
                 conv_p2 = optimal_roth_conversion(
                     year=current_year,
                     inflation_index=current_inflation_index,
                     filing_status=self.filing_status,
-                    AGI_base=AGI, # Current AGI
+                    AGI_base=AGI,  # use the AGI *so far* as the base for planning
                     traditional_balance=p2_trad_bal,
-                    tax_strategy=self.tax_strategy,
-                    irmaa_strategy=self.irmaa_strategy
+                    roth_tax_bracket=self.roth_tax_bracket,
+                    roth_irmaa_threshold=self.roth_irmaa_threshold
                 )
-                
-            # Execute Person 2 Conversion (Pro-rata across their traditional accounts)
-            if conv_p2 > 0:
-                # Find destination Roth (use first found or create new)
-                p2_roth_targets = [k for k, v in current_accounts.items() 
-                                   if v.get("owner") == "person2" and v.get("tax") == "roth"]
-                target_roth = p2_roth_targets[0] if p2_roth_targets else None
-                
-                # If no Roth exists for Person 2, we technically can't convert 
-                # (or we'd need to spawn a new account). For now, skip if no target.
-                if target_roth:
-                    remaining_to_convert = conv_p2
-                    for name in p2_trad_accts:
-                        if remaining_to_convert <= 0: break
-                        bal = current_accounts[name]["balance"]
-                        if bal <= 0: continue
-                        
-                        # Pro-rata-ish: drain accounts in order until amount met
-                        amount = min(bal, remaining_to_convert)
-                        current_accounts[name]["balance"] -= amount
-                        current_accounts[target_roth]["balance"] += amount
-                        remaining_to_convert -= amount
-                    
-                    # Update AGI for Person 1's calculation
-                    AGI += conv_p2
-                    total_conversion_this_year += conv_p2
+            total_conversion_plan += conv_p2
 
-            # --- Person 1 Conversion ---
-            p1_trad_accts = [k for k, v in current_accounts.items() 
+            # Person 1 planned conversion
+            p1_trad_accts = [k for k, v in current_accounts.items()
                              if v.get("owner") == "person1" and v.get("tax") == "traditional"]
             p1_trad_bal = sum(current_accounts[k]["balance"] for k in p1_trad_accts)
-            
             conv_p1 = 0.0
             if p1_trad_bal > 0:
                 conv_p1 = optimal_roth_conversion(
                     year=current_year,
                     inflation_index=current_inflation_index,
                     filing_status=self.filing_status,
-                    AGI_base=AGI, # AGI is now higher due to P2's conversion
+                    AGI_base=AGI + conv_p2,  # plan P1 after P2 (AGI increases if P2 converts)
                     traditional_balance=p1_trad_bal,
-                    tax_strategy=self.tax_strategy,
-                    irmaa_strategy=self.irmaa_strategy
+                    roth_tax_bracket=self.roth_tax_bracket,
+                    roth_irmaa_threshold=self.roth_irmaa_threshold
                 )
+            total_conversion_plan += conv_p1
 
-            # Execute Person 1 Conversion
-            if conv_p1 > 0:
-                p1_roth_targets = [k for k, v in current_accounts.items() 
-                                   if v.get("owner") == "person1" and v.get("tax") == "roth"]
-                target_roth = p1_roth_targets[0] if p1_roth_targets else None
-                
-                if target_roth:
-                    remaining_to_convert = conv_p1
-                    for name in p1_trad_accts:
-                        if remaining_to_convert <= 0: break
-                        bal = current_accounts[name]["balance"]
-                        if bal <= 0: continue
-                        
-                        amount = min(bal, remaining_to_convert)
-                        current_accounts[name]["balance"] -= amount
-                        current_accounts[target_roth]["balance"] += amount
-                        remaining_to_convert -= amount
-                    
-                    AGI += conv_p1
-                    total_conversion_this_year += conv_p1
+            # Keep conv_p1/conv_p2 locally so we can execute them in Q4 later.
+            planned_conv = {"person1": conv_p1, "person2": conv_p2}
 
-            self.conversion_paths[path_index, i] = total_conversion_this_year
             # =========================================================================
             # --- STEP 3: TAX CALCULATION ---
             # =========================================================================
             MAGI = AGI # Simplified: MAGI is often close to AGI, conversion is included.
             
             # Get MAGI from 2 years prior for IRMAA calculation (offset by 2)
-            magi_two_years_ago = magi_path[year_index] 
+            magi_two_years_ago = magi_path[year_index - 2] 
             
             total_taxes, federal_tax, medicare_irmaa = calculate_taxes(
                 year=current_year,
@@ -384,10 +346,6 @@ class RetirementSimulator:
                 qualified_dividends=0.0, 
                 social_security_income=ss_benefit,
             )
-# ... after Step 3: TAX CALCULATION ...
-            self.taxes_paths[path_index, i] = total_taxes
-            self.medicare_paths[path_index, i] = medicare_irmaa
-            magi_path[year_index + 2] = MAGI 
 
             # =========================================================================
             # --- STEP 4: DETERMINE ANNUAL WITHDRAWAL NEED ---
@@ -403,14 +361,17 @@ class RetirementSimulator:
                 current_year, 
                 current_inflation_index
             )
+
+            # --- Define spend_plan from prior year portfolio balance ---
+            prior_year_balance = self.portfolio_paths[path_index, year_index - 1]
+            spend_plan = clean_percent(self.inputs.withdrawal_rate) * prior_year_balance
+            self.plan_paths[path_index, year_index] = spend_plan
+
+            # --- leftover for discretionary spending ---
+            leftover_cash = max(0.0, spend_plan - annual_base_spending - annual_lumpy_needs)
             
-            # Save expense paths (Store actual/desired amounts as determined by the planner)
-            # NOTE: If your optimizer cuts travel/gifting, you must update these paths in STEP 6.
-            self.base_spending_paths[path_index, i] = annual_base_spending
-            self.lumpy_spending_paths[path_index, i] = annual_lumpy_needs
-            self.travel_paths[path_index, i] = annual_travel_desired
-            self.gifting_paths[path_index, i] = annual_gifting_desired
-            # You may also need a home_repair_paths
+            self.base_spending_paths[path_index, year_index] = annual_base_spending
+            self.lumpy_spending_paths[path_index, year_index] = annual_lumpy_needs
 
             # Total desired cash for the year (Fixed Expenses + Desired Adjustable + Taxes)
             total_annual_withdrawal_needed = (
@@ -427,104 +388,424 @@ class RetirementSimulator:
                 ss_benefit
             )
 
-            # The net amount to be pulled from the portfolio to cover the gap
+            # -------------------------------
+            # Discretionary Travel
+            # -------------------------------
+            leftover_cash = max(0, spend_plan - (annual_base_spending + annual_lumpy_needs + total_taxes_final))
+
+            # Travel target: full until 2035, then half, inflated
+            target_travel = annual_travel_desired if current_year <= 2035 else annual_travel_desired / 2
+            target_travel *= current_inflation_index
+            proposed_travel = min(target_travel, leftover_cash)
+
+            # Estimate ordinary/LTCG portion for tax basis using withdrawal_engine simulation
+            tax_sim_bal = copy.deepcopy(current_accounts)
+            simulate_only = True
+            res = self.withdrawal_engine._withdraw_from_hierarchy(
+                cash_needed=proposed_travel,
+                accounts_bal=tax_sim_bal,
+                simulate_only=simulate_only
+            )
+            travel_ordinary = res.get("ordinary_inc", 0.0)
+            travel_ltcg = res.get("ltcg_inc", 0.0)
+
+            # Compute MAGI including Social Security and prior ordinary/LTCG income
+            MAGI_proposed_travel = final_ordinary_income_actual + travel_ordinary + travel_ltcg + ss_benefit
+            # Use tax engine to get effective marginal rates for this income
+            federal_rate, state_rate = get_effective_marginal_rates(
+                year=current_year,
+                income=MAGI_proposed_travel,
+                filing_status=self.filing_status,
+                state_of_residence=self.state_of_residence,
+                age1=current_age_person1,
+                age2=current_age_person2,
+                inflation_index=current_inflation_index
+            )
+            total_rate = 1 + federal_rate + state_rate
+
+            # Reduce proposed travel if MAGI exceeds your target threshold (if any)
+            # If you have a target MAGI for IRMAA/fill strategy, define it here:
+            MAGI_limit = float('inf')  # or a specific target if needed
+            if MAGI_proposed_travel > MAGI_limit:
+                over = MAGI_proposed_travel - MAGI_limit
+                proposed_travel -= over / total_rate
+  
+            # Round to nearest $1,000 and ensure non-negative
+            actual_travel = max(0, math.ceil(proposed_travel / 1000) * 1000)
+            self.travel_paths[path_index, year_index] = actual_travel
+
+            # Update the net portfolio draw for this year
             annual_portfolio_draw_needed = max(0.0, total_annual_withdrawal_needed - total_annual_cash_in)
-            self.portfolio_withdrawal_paths[path_index, i] = annual_portfolio_draw_needed
-            
+            self.portfolio_withdrawal_paths[path_index, year_index] = annual_portfolio_draw_needed
+
             # =========================================================================
             # --- STEP 5: QUARTERLY WITHDRAWAL AND INVESTMENT RETURNS ---
             # =========================================================================
 
-            # Annual amounts are divided into four equal quarterly amounts
+            # Annual amounts (these were computed above)
             quarterly_rmd_draw = annual_rmd_required / 4.0
+            quarterly_def457b_draw = def457b_income / 4.0
+            quarterly_trust_income_draw = trust_income / 4.0
             quarterly_portfolio_draw_needed = annual_portfolio_draw_needed / 4.0
-            
-            # Get the four quarterly returns for the current year
-            eq_q_returns = equity_q_path[i*4 : (i+1)*4]
-            bond_q_returns = bond_q_path[i*4 : (i+1)*4]
 
-            # Track actual tax character of portfolio withdrawals for final MAGI/tax adjustment
+            # Slice the 4 quarterly returns
+            eq_q_returns   = equity_q_path[i * 4 : (i + 1) * 4]
+            bond_q_returns = bond_q_path[i * 4 : (i + 1) * 4]
+
+            # Track realized tax character for this year's income accounting
             final_ordinary_income_actual = 0.0
             final_ltcg_income_actual = 0.0
+
+            for q in range(4):
+                # 1. Original accounts
+                current_accounts = current_accounts  # your baseline
+
+                # 2. Deepcopy for tax simulation (already in your code)
+                tax_sim_bal = copy.deepcopy(current_accounts)
+
+                # 3. Deepcopy for actual ROTH conversions (safe isolation)
+                conversion_accounts = copy.deepcopy(current_accounts)
             
-            # Hardcoded withdrawal order (from withdrawal_engine.py snippet)
-            withdrawal_order = ["taxable", "trust", "inherited", "traditional", "roth"] 
-
-            for q in range(4): 
+                # ---------------------------------------------------------------------
+                # 1) MANDATORY QUARTERLY DRAWS (RMDs & Trust Income) and 457b Income
+                # ---------------------------------------------------------------------
                 
-                # Total cash needed from portfolio draw (includes the RMD)
-                quarterly_total_draw = quarterly_portfolio_draw_needed + quarterly_rmd_draw
+                # We no longer rely on a total RMD target, but withdraw the 1/4 RMD
+                # from each specific account, as required by law.
                 
-                # Execute the withdrawal, modifying current_accounts in place
-                # Assumes self.accounts_income is an instance of a class that contains _withdraw_from_hierarchy
-                withdrawal_result = self.accounts_income._withdraw_from_hierarchy(
-                    cash_needed=quarterly_total_draw, 
-                    accounts_bal=current_accounts, 
-                    order=withdrawal_order,
-                )
-
-                final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
-                final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
-                
-                # Apply Quarterly Investment Returns (using separate asset classes)
-                market_return_eq = eq_q_returns[q] 
-                market_return_bond = bond_q_returns[q]
-
-                for name in current_accounts.keys():
-                    acct = current_accounts[name]
+                # 1a) RMD Draw: Withdraw the required amount from each specific account
+                for acct_name, annual_rmd_amount in rmds_by_account_annual.items():
+                    # Look up the account state
+                    acct = current_accounts.get(acct_name)
                     
-                    # Portfolio Blending (Assumes a 70/30 allocation if not specified in account)
-                    # NOTE: This must be properly configured from your inputs
-                    equity_pct = acct.get('equity_pct', 0.7) 
-                    bond_pct = 1.0 - equity_pct
-                    
-                    # Calculate blended return for the account
-                    blended_q_return = (
-                        equity_pct * market_return_eq + 
-                        bond_pct * market_return_bond
+                    if acct and acct.get("balance", 0.0) > 0:
+                        
+                        quarterly_rmd = annual_rmd_amount / 4.0
+                        
+                        # Draw amount is limited by the current balance
+                        draw_amount = min(quarterly_rmd, acct["balance"])
+                        
+                        acct["balance"] -= draw_amount
+                        final_ordinary_income_actual += draw_amount # RMD is ordinary income
+
+                # 1b) Trust Income Draw: Withdraw the quarterly portion from Trust accounts
+                quarterly_trust_income_draw = trust_income / 4.0
+                trust_draw_remaining_q = quarterly_trust_income_draw
+
+                # Iterate over accounts, prioritizing drawing the required trust income
+                # from any available Trust account until the quarterly requirement is met.
+                for acct_name, acct in current_accounts.items():
+                    if acct.get("tax") == "trust" and acct.get("balance", 0.0) > 0 and trust_draw_remaining_q > 0:
+                        
+                        # Draw up to the remaining required trust income, capped by balance
+                        draw_amount = min(trust_draw_remaining_q, acct["balance"])
+                        
+                        acct["balance"] -= draw_amount
+                        trust_draw_remaining_q -= draw_amount
+                        final_ordinary_income_actual += draw_amount # Trust Income is ordinary income
+                        
+                        if trust_draw_remaining_q <= 0:
+                            break # Trust income draw satisfied for the quarter
+
+                # 1c) Deferred 457b Income Draw: Withdraw the quarterly portion from 457b accounts
+                quarterly_def457b_income_draw = def457b_income / 4.0
+                def457b_draw_remaining_q = quarterly_def457b_income_draw
+
+                for acct_name, acct in current_accounts.items():
+                    if acct.get("tax") == "def457b" and acct.get("balance", 0.0) > 0 and def457b_draw_remaining_q > 0:
+                        
+                        draw_amount = min(def457b_draw_remaining_q, acct["balance"])
+                        
+                        acct["balance"] -= draw_amount
+                        def457b_draw_remaining_q -= draw_amount
+                        final_ordinary_income_actual += draw_amount # Trust Income is ordinary income
+                        
+                        if def457b_draw_remaining_q <= 0:
+                            break # def457b income draw satisfied for the quarter
+
+                # ---------------------------------------------------------------------
+                # 2) RESIDUAL PORTFOLIO WITHDRAWAL (For remaining spending needs)
+                # ---------------------------------------------------------------------
+                
+                # annual_portfolio_draw_needed was calculated in STEP 4 (Total needs - Non-portfolio income)
+                # It is the amount that MUST be withdrawn from IRA/Roth/Taxable/Trust (beyond RMD/Trust draw)
+                quarterly_portfolio_draw_remaining = annual_portfolio_draw_needed / 4.0
+
+                simulate_only = False #doing actual portfolio draws now
+                quarterly_portfolio_draw_remaining = quarterly_portfolio_draw_needed
+                if quarterly_portfolio_draw_remaining > 0:
+                    withdrawal_result = self.accounts_income._withdraw_from_hierarchy(
+                        cash_needed=quarterly_portfolio_draw_remaining,
+                        accounts_bal=current_accounts,
+                        simulate_only=simulate_only,
                     )
+                    final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
+                    final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
 
-                    # Apply return to remaining balance
-                    acct['balance'] *= (1 + blended_q_return)
-                    
-                    # Basis tracking: Apply return to basis for taxable accounts
-                    if acct.get('tax') == 'taxable':
-                        # Basis grows with the market return for taxable accounts
-                        basis_growth = acct.get('basis', 0.0) * blended_q_return
-                        acct['basis'] = acct.get('basis', 0.0) + basis_growth
+
+                # ---------------------------------------------------------------------
+                # 2) In Q4 do ROTH conversions and Gifting
+                # ---------------------------------------------------------------------
+                if q == 3:
+                    # Execute conversions in Q4 only
+                    running_total = 0.0
+                    # Person 2
+                    conv = planned_conv.get("person2", 0.0)
+                    if conv > 0:
+                        # pro-rata across person's trad accounts
+                        p2_trads = [n for n, a in current_accounts.items() if a.get("owner") == "person2" and a.get("tax") == "traditional" and a.get("balance",0) > 0]
+                        p2_total = sum(current_accounts[n]["balance"] for n in p2_trads)
+                        # choose a Roth target (existing roth)
+                        p2_roths = [n for n,a in current_accounts.items() if a.get("owner") == "person2" and a.get("tax") == "roth"]
+                        if p2_roths and p2_total > 0:
+                            roth_target = p2_roths[0]
+                            remaining = conv
+                            for n in p2_trads:
+                                if remaining <= 0:
+                                    break
+                                available = current_accounts[n]["balance"]
+                                take = min(available, conv * (available / p2_total))
+                                # safety clamp
+                                take = min(take, remaining, current_accounts[n]["balance"])
+                                current_accounts[n]["balance"] -= take
+                                current_accounts[roth_target]["balance"] += take
+                                final_ordinary_income_actual += take   # conversions = ordinary income realized in Q4
+                                remaining -= take
+                                running_total += take
+
+                    # Person 1 (same pattern)
+                    conv = planned_conv.get("person1", 0.0)
+                    if conv > 0:
+                        p1_trads = [n for n, a in current_accounts.items() if a.get("owner") == "person1" and a.get("tax") == "traditional" and a.get("balance",0) > 0]
+                        p1_total = sum(current_accounts[n]["balance"] for n in p1_trads)
+                        p1_roths = [n for n,a in current_accounts.items() if a.get("owner") == "person1" and a.get("tax") == "roth"]
+                        if p1_roths and p1_total > 0:
+                            roth_target = p1_roths[0]
+                            remaining = conv
+                            for n in p1_trads:
+                                if remaining <= 0:
+                                    break
+                                available = current_accounts[n]["balance"]
+                                take = min(available, conv * (available / p1_total))
+                                take = min(take, remaining, current_accounts[n]["balance"])
+                                current_accounts[n]["balance"] -= take
+                                current_accounts[roth_target]["balance"] += take
+                                final_ordinary_income_actual += take
+                                remaining -= take
+                                running_total += take
+                                
+                    # after both person conv executions
+                    self.conversion_paths[path_index, year_index] = running_total
+
+                # -------------------------------
+                # 2) Gifting
+                # -------------------------------
+                leftover_for_gifting = max(
+                    0,
+                    spend_plan - (annual_base_spending + annual_lumpy_needs + actual_travel + total_taxes_final)
+                )
+                target_gifting = annual_gifting_desired * current_inflation_index
+                proposed_gifting = min(leftover_for_gifting, target_gifting)
+
+                # Estimate ordinary/LTCG portion for tax basis using simulation
+                simulate_only = True # simulating draws first
+                tax_sim_bal = copy.deepcopy(current_accounts)
+                res = self.withdrawal_engine._withdraw_from_hierarchy(
+                    cash_needed=proposed_gifting,
+                    accounts_bal=tax_sim_bal,
+                    simulate_only=simulate_only
+                )
+                ordinary_income = res.get("ordinary_inc", 0.0)
+                ltcg_income = res.get("ltcg_inc", 0.0)
+
+                taxable_gifting = final_ordinary_income_actual + ordinary_income + ltcg_income
+
+                # Use tax engine to get effective marginal rates for this income
+                federal_rate, state_rate = get_effective_marginal_rates(
+                    year=current_year,
+                    income=taxable_gifting,
+                    filing_status=self.filing_status,
+                    state_of_residence=self.state_of_residence,
+                    age1=current_age_person1,
+                    age2=current_age_person2,
+                    inflation_index=current_inflation_index
+                )
+                total_rate = 1 + federal_rate + state_rate  # scale factor for reducing withdrawal
+
+                # Optionally, define a target MAGI to limit gifting for IRMAA/fill purposes
+                MAGI_limit = float('inf')  # replace with a specific target if needed
+                if taxable_gifting > MAGI_limit:
+                    over = taxable_gifting - MAGI_limit
+                    proposed_gifting -= over / total_rate
+
+                # Round to nearest $1,000
+                actual_gifting = max(0, math.ceil(proposed_gifting / 1000) * 1000)
+                self.gifting_paths[path_index, year_index] = actual_gifting
+
+                # Execute withdrawal from portfolio
+                simulate_only = False # doing actual portfolio draw
+                if actual_gifting > 0:
+                    withdrawal_result = self.withdrawal_engine._withdraw_from_hierarchy(
+                        cash_needed=actual_gifting,
+                        accounts_bal=current_accounts,
+                        simulate_only=simulate_only
+                    )
+                    final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
+                    final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
+
+                # ---------------------------------------------------------------------
+                # 3) APPLY QUARTERLY RETURNS
+                # ---------------------------------------------------------------------
+                eq_r = eq_q_returns[q]
+                bond_r = bond_q_returns[q]
+
+                for acct_name, acct in current_accounts.items():
+
+                    bal = acct.get("balance", 0.0)
+                    if bal <= 0:
+                        # Skip negative/empty accounts — prevents pathological return explosions
+                        acct["balance"] = 0.0
+                        continue
+
+                    # Guaranteed normalized in Stage 1
+                    eq_pct = acct["equity_pct"]
+                    bond_pct = acct["bond_pct"]
+
+                    blended_q_ret = eq_pct * eq_r + bond_pct * bond_r
+
+                    # Apply return
+                    new_bal = bal * (1 + blended_q_ret)
+                    acct["balance"] = new_bal
+
+                    # Basis tracking for taxable accounts only
+                    if acct.get("tax") == "taxable":
+                        basis = acct.get("basis", 0.0)
+                        acct["basis"] = basis + (basis * blended_q_ret)
 
             # =========================================================================
             # --- STEP 6: POST-QUARTERLY CLEANUP AND SAVE DATA ---
             # =========================================================================
-            
-           # Final Portfolio Balance
-            self.portfolio_paths[path_index, i] = self._get_total_portfolio(current_accounts)
+            # final_ordinary_income_actual and final_ltcg_income_actual include:
+            #   - withdrawals that were ordinary income
+            #   - realized LTCG
+            #   - ROTH conversions we added in Q4 above (as ordinary income)
+
+            final_MAGI = final_ordinary_income_actual + final_ltcg_income_actual + ss_benefit
+            self.magi_paths[path_index, year_index] = final_MAGI
+
+            total_taxes_final, federal_tax_final, medicare_irmaa_final = calculate_taxes(
+                year=current_year,
+                inflation_index=current_inflation_index,
+                filing_status=self.filing_status,
+                state_of_residence=self.state_of_residence,
+                age1=current_age_person1,
+                age2=current_age_person2,
+                magi_two_years_ago=magi_path[year_index - 2],
+                AGI=final_ordinary_income_actual + final_ltcg_income_actual,
+                taxable_ordinary=final_ordinary_income_actual,
+                lt_cap_gains=final_ltcg_income_actual,
+                qualified_dividends=0.0,
+                social_security_income=ss_benefit,
+            )
+            self.taxes_paths[path_index, year_index] = total_taxes_final
+            self.medicare_paths[path_index, year_index] = medicare_irmaa_final
+
+            # Final Portfolio Balance
+            self.portfolio_paths[path_index, year_index] = self._get_total_portfolio(current_accounts)
             
             # Save the final account state for the year
-            self.account_paths[path_index][i] = copy.deepcopy(current_accounts)
+            self.account_paths[path_index][year_index] = copy.deepcopy(current_accounts)
 
-            # NOTE: Final adjustment of MAGI and taxes based on actual withdrawals (ordinary_income_actual)
-            # and re-running the Roth conversion logic may occur here or in Step 2.
-            # Assuming the loop continues to the next year (i+1).
+            self.travel_paths[path_index, year_index] = annual_travel_desired
+            self.gifting_paths[path_index, year_index] = annual_gifting_desired
 
+            # After all conversions, update the main accounts
+            current_accounts = conversion_accounts
 
     # =========================================================================
     # 3. UTILITY FUNCTIONS — Modular Wiring Only
     # =========================================================================
 
     def _normalize_accounts(self):
-        """Ensure account dicts have required fields."""
+        """Ensure account dicts have required fields and canonical numeric types.
+
+        - Accept either 'equity'/'bond' or 'equity_pct'/'bond_pct' from XML.
+        - Convert numeric strings to floats.
+        - Ensure balances/basis are floats (default 0.0).
+        - Compute equity_pct as equity / (equity + bond) if both present.
+        """
+        import numbers
+
+        # Make a defensive deep copy of the input accounts so we can mutate safely
         self.initial_accounts = copy.deepcopy(self.inputs.accounts)
-        for acct in self.initial_accounts.values():
-            acct.setdefault("balance", 0.0)
-            acct.setdefault("basis", 0.0)
-            acct.setdefault("tax", "traditional")
-            acct.setdefault("owner", "person1")
-            acct.setdefault("mandatory_yield", 0.0)
-            acct.setdefault("ordinary_pct", 0.1)
+
+        for acct_name, acct in self.initial_accounts.items():
+            # --- normalize numeric fields ---
+            # Accept strings coming from XML and coerce to float safely.
+            def _to_float(val, default=0.0):
+                if val is None:
+                    return default
+                if isinstance(val, numbers.Number):
+                    return float(val)
+                try:
+                    return float(str(val))
+                except Exception:
+                    return default
+
+            acct['balance'] = _to_float(acct.get('balance', 0.0), 0.0)
+            acct['basis']   = _to_float(acct.get('basis', 0.0), 0.0)
+
+            # Tax/owner defaults
+            acct['tax'] = acct.get('tax') or 'traditional'
+            acct['owner'] = acct.get('owner') or 'person1'
+            acct.setdefault('income', 0.0)
+            acct.setdefault('ordinary_pct', 0.1)
+
+            # --- normalize asset mix ---
+            # Accept either 'equity'/'bond' or 'equity_pct'/'bond_pct'
+            raw_equity = acct.get('equity', acct.get('equity_pct', None))
+            raw_bond   = acct.get('bond', acct.get('bond_pct', None))
+
+            # Coerce to floats where present
+            equity = _to_float(raw_equity, None)
+            bond   = _to_float(raw_bond, None)
+
+            # If both are None => fallback default mix (70/30)
+            if equity is None and bond is None:
+                equity_pct = 0.70
+            else:
+                # If only one side present, assume the other is the complement (if sensible)
+                if equity is None:
+                    # bond given -> equity = 1 - bond
+                    bond = min(max(bond, 0.0), 1.0)
+                    equity = 1.0 - bond
+                elif bond is None:
+                    equity = min(max(equity, 0.0), 1.0)
+                    bond = 1.0 - equity
+
+                s = equity + bond
+                if s <= 0:
+                    equity_pct = 0.70
+                else:
+                    equity_pct = equity / s
+
+            acct['equity_pct'] = float(equity_pct)
+            acct['bond_pct'] = float(1.0 - equity_pct)
+
+        # End _normalize_accounts
 
     def _get_total_portfolio(self, accounts: Dict) -> float:
-        return sum(acct.get("balance", 0.0) for acct in accounts.values())
+        """Return total portfolio balance as sum of numeric balances (no magic pennies)."""
+        total = 0.0
+        for acct in accounts.values():
+            bal = acct.get('balance', 0.0)
+            try:
+                total += float(bal) if bal is not None else 0.0
+            except Exception:
+                # defensive fallback if someone passed a weird type
+                total += 0.0
+        return total
+
 
     def _generate_market_path(self) -> Tuple[List[float], List[float]]:
         """
@@ -539,8 +820,7 @@ class RetirementSimulator:
             initial_inflation_sigma, long_term_inflation_sigma
         )
         
-        # NOTE: generate_returns returns three arrays (Equity, Bond, Inflation)
-        eq_q, bond_q, _ = generate_returns( 
+        eq_q, bond_q, _ = generate_returns(
             n_full=self.num_years, 
             nsims=1,
             corr_matrix=corr_matrix,
@@ -587,89 +867,6 @@ class RetirementSimulator:
             ann_rate, _ = calculate_annual_inflation(q_rates, cumulative[-1])
             cumulative.append(cumulative[-1] * (1 + ann_rate))
         return cumulative[1:]  # drop year 0 = 1.0
-
-    def _get_social_security_benefit(self, current_year: int, inflation_index: float) -> float:
-        return calculate_ss_benefit(
-            ages_person1=np.array([self.current_age_p1 + i for i in range(self.num_years)]),
-            ages_person2=np.array([self.current_age_p2 + i for i in range(self.num_years)]),
-            person1_ss_age_years=self.person1_ss_age_years,
-            person1_ss_age_months=self.person1_ss_age_months,
-            person1_birth_month=self.person1_birth_month,
-            person1_ss_fra=self.person1_ss_fra,
-            person1_birth_year=self.person1_birth_year,
-            person2_ss_age_years=self.person2_ss_age_years,
-            person2_ss_age_months=self.person2_ss_age_months,
-            person2_birth_month=self.person2_birth_month,
-            person2_ss_fra=self.person2_ss_fra,
-            person2_birth_year=self.person2_birth_year,
-            ss_fail_year=self.ss_fail_year,
-            ss_fail_percent=self.ss_fail_percent,
-            inflation_index=np.array([inflation_index]),
-            year=current_year,
-            year_idx=current_year - self.current_year,
-            get_ss_multiplier_func=self._get_ss_multiplier,  # you already have this somewhere
-        )
-
-    def _calculate_taxable_ss(self, ss_benefit: float, AGI: float) -> Tuple[float, float]:
-        taxable = calculate_taxable_ss_portion(ss_benefit)
-        return taxable, ss_benefit - taxable
-
-    def _calculate_rmds(self, accounts: Dict, age1: int, age2: int, year: int) -> float:
-        rmd_total = 0.0
-        for name, acct in accounts.items():
-            if acct.get("tax") not in ["traditional", "inherited"]:
-                continue
-            bal = acct.get("balance", 0.0)
-            owner_age = age1 if acct.get("owner") == "person1" else age2
-            factor = get_rmd_factor(owner_age, year)
-            if factor > 0:
-                rmd = bal / factor
-                acct["balance"] -= rmd
-                rmd_total += rmd
-        return rmd_total
-
-    def _get_pension_benefit(self, current_year: int, inflation_index: float) -> float:
-        return calculate_pension_income(
-            ages_person1=np.array([self.current_age_p1 + i for i in range(self.num_years)]),
-            ages_person2=np.array([self.current_age_p2 + i for i in range(self.num_years)]),
-            person1_pension_age_years=self.person1_pension_age_years,
-            person1_birth_month=self.person1_birth_month,
-            person1_pension_age_months=self.person1_pension_age_months,
-            person1_pension_amount=self.person1_pension_amount,
-            person2_pension_age_years=self.person2_pension_age_years,
-            person2_birth_month=self.person2_birth_month,
-            person2_pension_age_months=self.person2_pension_age_months,
-            person2_pension_amount=self.person2_pension_amount,
-            year_idx=current_year - self.current_year,
-        )
-
-    def _get_def457b_income(self, current_year: int, inflation_index: float) -> float:
-        _, def457b_draw, _ = calculate_mandatory_account_draws(
-            accounts_bal={k: v.get("balance", 0.0) for k, v in self.initial_accounts.items()},
-            accounts_def=self.initial_accounts,
-            year=current_year,
-            birth_years={"person1": self.person1_birth_year, "person2": self.person2_birth_year},
-            get_def457b_factor_func=get_def457b_factor,
-        )
-        return def457b_draw
-
-    def _get_cash_needed(self, current_year: int, inflation_index: float) -> float:
-        base = self.base_annual_spending * inflation_index
-        # Add travel, gifting, lumpy, etc. here when ready
-        return base + self.travel + self.gifting
-
-    def _get_withdrawal_order(self, year: int) -> List[str]:
-        return ["taxable", "trust", "inherited", "traditional", "roth"]
-
-    def _execute_withdrawals(self, accounts: Dict, amount: float, order: List[str]) -> Tuple[float, float]:
-        engine = AccountsIncomeEngine(...)  # or inject via __init__ if preferred
-        result = engine._withdraw_from_hierarchy(amount, accounts, order)
-        return result["ordinary_inc"], result["ltcg_inc"]
-
-    def _apply_market_returns(self, accounts: Dict, market_return: float):
-        for acct in accounts.values():
-            if "balance" in acct:
-                acct["balance"] *= (1 + market_return)
 
     def _calculate_annual_spending_needs(self, 
         current_year: int, 

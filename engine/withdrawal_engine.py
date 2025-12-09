@@ -1,5 +1,6 @@
 # withdrawal_engine.py
 
+import copy
 # Handlkes logic for prioritizing account withdrawals
 #
 class WithdrawalEngine:
@@ -17,21 +18,23 @@ class WithdrawalEngine:
         tax_strategy = self.inputs.tax_strategy
         
         # Determine the order of accounts to withdraw from based on strategy
-        if tax_strategy == 'maximize_roth':
-            # Priority: Taxable -> Traditional/Inherited -> Roth (maximize Roth life)
-            return ["taxable", "trust", "traditional", "inherited", "def457b", "roth"]
-        elif tax_strategy == 'maximize_traditional':
-            # Priority: Roth -> Traditional/Inherited -> Taxable
-            return ["roth", "trust", "traditional", "inherited", "def457b", "taxable"]
+        if tax_strategy == 'typical':
+            return ["taxable", "trust", "traditional", "inherited", "roth"]
+        elif tax_strategy == 'trust_first':
+            return ["trust", "taxable", "traditional", "inherited", "roth"]
+        elif tax_strategy == 'preserve_trust':
+            return ["taxable", "traditional", "inherited", "roth", "trust"]
+        elif tax_strategy == 'lower_rmds':
+            return ["traditional", "inherited", "taxable", "trust", "roth"]
         else:
-            # Default to drawing down tax-deferred first to manage RMDs
-            return ["traditional", "def457b", "inherited", "taxable", "roth", "trust"]
+            # Default to drawing down tax-deferred first to manage RMDs and opreserving Trusts
+            return ["traditional", "inherited", "taxable", "roth", "trust"]
 
 
     def _withdraw_from_hierarchy(self, 
                                  cash_needed: float, 
                                  accounts_bal: dict, 
-                                 simulate_only: bool = False) -> dict:
+                                 simulate_only: bool) -> dict:
         """
         The Core Engine: Withdraws cash_needed following the dynamically generated order.
         
@@ -49,7 +52,7 @@ class WithdrawalEngine:
 
         working_bal = accounts_bal
         if simulate_only:
-            working_bal = copy.ddepcopy(accounts_bal)
+            working_bal = copy.deepcopy(accounts_bal)
 
         remaining = cash_needed
         total_withdrawn = 0.0

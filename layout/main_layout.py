@@ -67,8 +67,8 @@ main_layout = html.Div(
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
                 dcc.Slider(
-                    id='nsims', min=1, max=30000, step=1000, value=1,
-                    marks={i: f"{i//1000}k" for i in range(0, 31000, 5000)},
+                    id='nsims', min=1, max=30000, step=100, value=100,
+                    marks={i: f"{i//1000}k" for i in range(0, 31000, 2000)},
                     tooltip={"placement": "bottom", "always_visible": True},
                 ),
             ], style={'flex': 1, 'minWidth': '300px', 'padding': '0 20px'}
@@ -213,7 +213,7 @@ main_layout = html.Div(
                                 {"field": "basis", "headerName": "Basis ($)",
                                  "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
                                  "editable": True},
-                                {"field": "mandatory_yield", "headerName": "Mand. Yield", "editable": True, "width": 110},
+                                {"field": "income", "headerName": "Mand. Yield", "editable": True, "width": 110},
                                 {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
                                 {
                                     "headerName": "Delete", # Corrected from 'Headername'
@@ -279,41 +279,17 @@ main_layout = html.Div(
                 style={'flex': '1', 'minWidth': '140px', 'textAlign': 'center'}
             ),
 
-            # Item 2F: Tax Strategy (Dropdown) - Added display: block to Label for consistency
-            html.Div([
-                html.Label("Tax Strategy", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
-                dcc.Dropdown(
-                    id='tax_strategy',
-                    options=[
-                        {'label': 'Fill 22% bracket ($211k)', 'value': 'fill_22_percent'},
-                        {'label': 'Fill 24% bracket ($404k)', 'value': 'fill_24_percent'},
-                        {'label': 'Fill 32% bracket ($512k)', 'value': 'fill_32_percent'},
-                        {'label': 'Fill 35% bracket ($767k)', 'value': 'fill_35_percent'},
-                        {'label': 'No conversions', 'value': 'none'},
-                    ],
-                    value='fill_24_percent',
-                    # Adjusted style to match height of input boxes (36px)
-                    style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center'} 
-                )
-            ], style={'flex': '3', 'minWidth': '260px', 'textAlign': 'center'}),
-
-            # Item 2G: IRMAA Strategy (Dropdown) - Added display: block to Label for consistency
-            html.Div([
-                html.Label("IRMAA Strategy", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
-                dcc.Dropdown(
-                    id='irmaa_strategy',
-                    options=[
-                        {'label': 'Stay under Tier 0 ($218k)', 'value': 'fill_IRMAA_0'},
-                        {'label': 'Stay under Tier 1 ($274k)', 'value': 'fill_IRMAA_1'},
-                        {'label': 'Stay under Tier 2 ($342k)', 'value': 'fill_IRMAA_2'},
-                        {'label': 'Stay under Tier 3 ($410k)', 'value': 'fill_IRMAA_3'},
-                        {'label': 'Stay under Tier 4 ($750k)', 'value': 'fill_IRMAA_4'},
-                    ],
-                    value='fill_IRMAA_3',
-                    # Adjusted style to match height of input boxes (36px)
-                    style={'fontSize': 16, 'height': '36px', 'lineHeight': '20px', 'textAlign': 'center'}
-                )
-            ], style={'flex': '3', 'minWidth': '260px', 'textAlign': 'center'}),
+            # Item 2F: Success Threshold
+            html.Div(
+                pretty_currency_input('success_threshold', value=float(100_000), label="Success Threshold"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+            ),
+            
+            # Item 2G: Avoid Ruin Threshold
+            html.Div(
+                pretty_currency_input('avoid_ruin_threshold', value=float(50_000), label="Avoid Ruin"),
+                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}      
+            ),
 
         ], style={
             'display': 'flex',
@@ -328,31 +304,73 @@ main_layout = html.Div(
         #  ROW 3:Remaining Inputs + Success/Avoid Ruin Output
         # ----------------------------------------------------------------------
         html.Div([
-            # Item 3A: Success Threshold
-            html.Div(
-                pretty_currency_input('success_threshold', value=float(100_000), label="Success Threshold"),
-                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
-            ),
-            
-            # Item 3B: Avoid Ruin Threshold
-            html.Div(
-                pretty_currency_input('avoid_ruin_threshold', value=float(50_000), label="Avoid Ruin"),
-                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}      
-            ),
-            
-            # Item 3C: SS Trust Fund Failure Year
+            # Item 3A: ROTH Tax Strategy (Dropdown) - Added display: block to Label for consistency
+            html.Div([
+                html.Label("ROTH Tax Bracket", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
+                dcc.Dropdown(
+                    id='roth_tax_bracket',
+                    options=[
+                        {'label': 'Fill 22% bracket ($211k)', 'value': 'fill_22_percent'},
+                        {'label': 'Fill 24% bracket ($404k)', 'value': 'fill_24_percent'},
+                        {'label': 'Fill 32% bracket ($512k)', 'value': 'fill_32_percent'},
+                        {'label': 'Fill 35% bracket ($767k)', 'value': 'fill_35_percent'},
+                        {'label': 'No conversions', 'value': 'none'},
+                    ],
+                    value='fill_24_percent',
+                    # Adjusted style to match height of input boxes (36px)
+                    style={'fontSize': 16, 'height': '40px', 'lineHeight': '15px', 'textAlign': 'center'} 
+                )
+            ], style={'flex': '1', 'minWidth': '200px', 'textAlign': 'center'}),
+
+            # Item 3B: ROTH IRMAA Strategy (Dropdown) - Added display: block to Label for consistency
+            html.Div([
+                html.Label("ROTH IRMAA Threshold", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
+                dcc.Dropdown(
+                    id='roth_irmaa_threshold',
+                    options=[
+                        {'label': 'Stay under Tier 0 ($218k)', 'value': 'fill_IRMAA_0'},
+                        {'label': 'Stay under Tier 1 ($274k)', 'value': 'fill_IRMAA_1'},
+                        {'label': 'Stay under Tier 2 ($342k)', 'value': 'fill_IRMAA_2'},
+                        {'label': 'Stay under Tier 3 ($410k)', 'value': 'fill_IRMAA_3'},
+                        {'label': 'Stay under Tier 4 ($750k)', 'value': 'fill_IRMAA_4'},
+                    ],
+                    value='fill_IRMAA_3',
+                    # Adjusted style to match height of input boxes (36px)
+                    style={'fontSize': 16, 'height': '40px', 'lineHeight': '15px', 'textAlign': 'center'}
+                )
+            ], style={'flex': '1', 'minWidth': '210px', 'textAlign': 'center'}),
+
+            # Item 3C: Tax Strategy (Dropdown) - Added display: block to Label for consistency
+            html.Div([
+                html.Label("Tax Strategy", style={'fontWeight': 'bold', 'display': 'block', 'fontSize': 16, 'marginBottom': '6px'}),
+                dcc.Dropdown(
+                    id='tax_strategy',
+                    options=[
+                        {'label': 'Typical (Taxable - Trusts - Traditional - Roth)', 'value': 'typical'},
+                        {'label': 'Trusts First (Trusts - Taxable - Traditional - Roth)', 'value': 'trust_first'},
+                        {'label': 'Trusts Last (Taxable - Traditional - Roth - Trusts)', 'value': 'preserve_trust'},
+                        {'label': 'Minimize RMDs (Traditional - Taxable - Trusts - Roth)', 'value': 'lower_rmds'},
+                        {'label': 'Default (Traditional - Taxable - Roth - Trusts)', 'value': 'default'},
+                    ],
+                    value='typical',
+                    # Adjusted style to match height of input boxes (36px)
+                    style={'fontSize': 16, 'height': '40px', 'lineHeight': '15px', 'textAlign': 'center'}
+                )
+            ], style={'flex': '1', 'minWidth': '250px', 'textAlign': 'center'}),
+
+            # Item 3D: SS Trust Fund Failure Year
             html.Div(
                 pretty_year_input('ss_fail_year', value=int(2033), label="SS Fail Year"),
-                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+                style={'flex': '1', 'minWidth': '120px', 'textAlign': 'center'}
             ),
             
-            # Item 3D:  SS Trust Fund % reduction in benefits
+            # Item 3E:  SS Trust Fund % reduction in benefits
             html.Div(
-                pretty_percent_input('ss_fail_percent', value=float(0.23), label="SS Benefit Recution", decimals=1),
-                style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
+                pretty_percent_input('ss_fail_percent', value=float(0.23), label="SS Redution", decimals=1),
+                style={'flex': '1', 'minWidth': '120px', 'textAlign': 'center'}
             ),
             
-            # Item 3E: Output of Success/Avoid Failure Rates
+            # Item 3F: Output of Success/Avoid Failure Rates
             html.Div(
                 id='success_header',
                 children="Click 'Run Simulation' to load results",
@@ -365,7 +383,7 @@ main_layout = html.Div(
                     'backgroundColor': '#e3f2fd',
                     'border': '2px solid #0052CC',
                     'borderRadius': '8px',
-                    'minWidth': "340px",
+                    'minWidth': "250px",
                     'height': '60px',
                     'justifySelf': 'end',
                     'lineHeight': '1.2',

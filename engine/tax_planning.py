@@ -186,8 +186,8 @@ def estimate_taxable_gap(
 def get_tax_planning_targets(
     year: int, 
     inflation_this_year: float, 
-    tax_strategy: str, 
-    irmaa_strategy: str, 
+    roth_tax_bracket: str, 
+    roth_irmaa_threshold: str, 
     filing_status: str
 ) -> Tuple[float, float]:
     """
@@ -216,10 +216,10 @@ def get_tax_planning_targets(
     }
     
     # Apply tax strategy - fill a tax bracket
-    tax_target = fill_targets.get(tax_strategy, float('inf')) 
+    tax_target = fill_targets.get(roth_tax_bracket, float('inf')) 
 
     # Apply IRMAA threshold 
-    irmaa_target = fill_thresholds.get(irmaa_strategy, float('inf'))
+    irmaa_target = fill_thresholds.get(roth_irmaa_threshold, float('inf'))
     
     # The actual planning target is the minimum of the two constraints
     return tax_target, irmaa_target

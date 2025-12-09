@@ -47,7 +47,8 @@ def register_simulation_callbacks(app):
         State("travel", "value"),
         State("gifting", "value"),
         State("tax_strategy", "value"),
-        State("irmaa_strategy", "value"),
+        State("roth_tax_bracket", "value"),
+        State("roth_irmaa_threshold", "value"),
         State("success_threshold", "value"),
         State("avoid_ruin_threshold", "value"),
         State("ss_fail_year", "value"),
@@ -55,7 +56,7 @@ def register_simulation_callbacks(app):
 
         prevent_initial_call=True
     )
-    def run_simulation(n_clicks, n_sims, base_spending, withdrawal_rate, portfolio_rows, max_roth, travel, gifting, tax_strategy, irmaa_strategy, success_threshold, avoid_ruin_threshold, ss_fail_year, ss_fail_percent):
+    def run_simulation(n_clicks, n_sims, base_spending, withdrawal_rate, portfolio_rows, max_roth, travel, gifting, tax_strategy, roth_tax_bracket, roth_irmaa_threshold, success_threshold, avoid_ruin_threshold, ss_fail_year, ss_fail_percent):
         from models import PlannerInputs
         if not n_clicks:
             return no_update
@@ -75,7 +76,8 @@ def register_simulation_callbacks(app):
                 travel=clean_currency(travel),
                 gifting=clean_currency(gifting),
                 tax_strategy=tax_strategy,
-                irmaa_strategy=irmaa_strategy,
+                roth_tax_bracket=roth_tax_bracket,
+                roth_irmaa_threshold=roth_irmaa_threshold,
                 ss_fail_year=ss_fail_year,
                 ss_fail_percent=clean_percent(ss_fail_percent),
             )

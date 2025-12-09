@@ -150,7 +150,7 @@ def create_inputs_layout():
                                 {"field": "basis", "headerName": "Basis ($)",
                                  "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
                                  "editable": True},
-                                {"field": "mandatory_yield", "headerName": "Mand. Yield", "editable": True, "width": 110},
+                                {"field": "income", "headerName": "Income, "editable": True, "width": 110},
                                 {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
                                 {
                                     "headerName": "Delete",

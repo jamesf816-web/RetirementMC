@@ -44,7 +44,7 @@ def create_portfolio_xml(portfolio_dict: dict) -> str:
 if __name__ == '__main__':
     # This structure mirrors the data in your dcc.Store
     test_data = json.loads(
-        '{"GST_Exempt": {"balance": 3132760, "equity": 0.75, "bond": 0.25, "tax": "trust", "owner": "person1", "mandatory_yield": 0.015}, '
+        '{"GST_Exempt": {"balance": 3132760, "equity": 0.75, "bond": 0.25, "tax": "trust", "owner": "person1", "income": 0.015}, '
          '"Taxable": {"balance": 1347857, "equity": 0.92, "bond": 0.08, "tax": "taxable", "owner": "person1", "basis": 789874}}'
     )
     xml_output = create_portfolio_xml(test_data)

@@ -61,10 +61,10 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
     colors = px.colors.qualitative.Vivid if color_theme == "Vivid" else px.colors.qualitative.Plotly
 
     for idx, (label, _) in enumerate(valid_trajectories):
-        y = percentile_data[label][2:]  # skip first 2 years (IRMAA lag)
+        y = percentile_data[label]#[1:]  # skip first year - prior to start of MC
 
         fig.add_trace(go.Scatter(
-            x=sim.years[2:],
+            x=sim.years, #[1:], # skip first year - prior to start of MC SAME AS Y slice
             y=y,
             mode='lines',
             line=dict(width=0),
@@ -133,8 +133,8 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     # We have real data → plot it
     # --------------------------------------------------
     for label, data in valid_data.items():
-        data_trimmed = data[:, 2:] if data.shape[1] > 2 else data
-        years = sim.years[2:] if len(sim.years) > 2 else sim.years
+        data_trimmed = data #[:, 2:] if data.shape[1] > 2 else data #this slices off forst 2 years
+        years = sim.years# [2:] if len(sim.years) > 2 else sim.years #this slices off first 2 years
 
         y_median = np.median(data_trimmed, axis=0)
         fig.add_trace(go.Scatter(

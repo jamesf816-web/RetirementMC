@@ -9,15 +9,22 @@ def parse_setup_xml(file_path: str) -> Dict[str, Any]:
 
     setup_dict: Dict[str, Any] = {}
 
-    # Top-level elements like current_year, end_age
     for child in root:
         if child.tag in ["person1", "person2", "simulation"]:
-            # Nested elements
             for sub in child:
-                setup_dict[f"{child.tag}_{sub.tag}"] = try_cast(sub.text)
+                val = try_cast(sub.text)
+                # Normalize owner references and booleans
+                if sub.tag in ["name", "owner"] and isinstance(val, str):
+                    val = val.strip().lower()
+                setup_dict[f"{child.tag}_{sub.tag}"] = val
         else:
-            setup_dict[child.tag] = try_cast(child.text)
-    
+            val = try_cast(child.text)
+            if child.tag in ["current_year", "end_age", "start_age", "death_year", "death_month"]:
+                val = int(val) if val is not None else val
+            if child.tag in ["balance", "equity", "bond", "basis"]:
+                val = float(val) if val is not None else val
+            setup_dict[child.tag] = val
+
     return setup_dict
 
 def try_cast(value: str) -> Any:
@@ -28,21 +35,24 @@ def try_cast(value: str) -> Any:
     # Booleans
     if value.lower() in ("true", "false"):
         return value.lower() == "true"
-    # Integers
+    
+    # Integers (try first)
     try:
-        return int(value)
+        if '.' not in value: # Optimization: check for decimal to avoid unnecessary exception
+            return int(value)
     except ValueError:
         pass
-    # Floats
+        
+    # Floats (try second)
     try:
         return float(value)
     except ValueError:
         pass
-    # Leave as string
-    return value
+        
+    return value # Return as string if all else fails
 
 def parse_portfolio_xml(file_path: str) -> Dict[str, Dict]:
-    """Load portfolio accounts from XML into a dict of dicts."""
+    """Load portfolio accounts from XML into a dict of dicts, with normalized values."""
     tree = ET.parse(file_path)
     root = tree.getroot()
     portfolio_dict: Dict[str, Dict] = {}
@@ -51,10 +61,22 @@ def parse_portfolio_xml(file_path: str) -> Dict[str, Dict]:
         name = acct.get("name", f"Account_{len(portfolio_dict)+1}")
         acct_dict = {}
         for field in acct:
-            acct_dict[field.tag] = try_cast(field.text)
+            value = try_cast(field.text)
+
+            # Normalize key fields
+            if field.tag == "tax" and isinstance(value, str):
+                value = value.strip().lower()
+            if field.tag == "owner" and isinstance(value, str):
+                value = value.strip().lower()
+            if field.tag in ["equity", "bond", "balance", "basis", "income"] and value is not None:
+                value = float(value)  # ensure numeric types are floats
+
+            acct_dict[field.tag] = value
+
         portfolio_dict[name] = acct_dict
 
     return portfolio_dict
+
 
 def parse_xml_content_to_dict(file_like_object: Any) -> Dict[str, Dict]:
     """

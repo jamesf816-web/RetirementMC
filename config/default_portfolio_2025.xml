@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<portfolio>
+    <account name="GST_Exempt">
+        <balance>3132760</balance>
+        <equity>0.75</equity>
+        <bond>0.25</bond>
+        <tax>trust</tax>
+        <owner>person1</owner>
+        <income>0.015</income>
+    </account>
+
+    <account name="REF_Irrev">
+        <balance>1806065</balance>
+        <equity>0.75</equity>
+        <bond>0.25</bond>
+        <tax>trust</tax>
+        <owner>person1</owner>
+        <income>0.015</income>
+    </account>
+
+    <account name="Deferred457b">
+        <balance>29299</balance>
+        <equity>0.25</equity>
+        <bond>0.75</bond>
+        <tax>def457b</tax>
+        <owner>person1</owner>
+    </account>
+
+    <account name="Taxable">
+        <balance>1347857</balance>
+        <equity>0.92</equity>
+        <bond>0.08</bond>
+        <tax>taxable</tax>
+        <owner>person1</owner>
+        <basis>789874</basis>
+    </account>
+
+    <account name="Joint_Taxable">
+        <balance>857710</balance>
+        <equity>0.26</equity>
+        <bond>0.74</bond>
+        <tax>taxable</tax>
+        <owner>person1</owner>
+        <basis>800000</basis>
+    </account>
+
+    <account name="RolloverIRA">
+        <balance>854793</balance>
+        <equity>0.77</equity>
+        <bond>0.23</bond>
+        <tax>traditional</tax>
+        <owner>person1</owner>
+    </account>
+
+    <account name="Trad_IRA">
+        <balance>255797</balance>
+        <equity>0.82</equity>
+        <bond>0.18</bond>
+        <tax>traditional</tax>
+        <owner>person1</owner>
+    </account>
+
+    <account name="Inherited_IRA63">
+        <balance>915953</balance>
+        <equity>0.81</equity>
+        <bond>0.19</bond>
+        <tax>inherited</tax>
+        <owner>person1</owner>
+	<death_year>2012</death_year>
+	<death_month>12</death_month>
+	<decedent_started_rmds>True</decedent_started_rmds>
+    </account>
+
+    <account name="Inherited_IRA77">
+        <balance>175130</balance>
+        <equity>0.78</equity>
+        <bond>0.22</bond>
+        <tax>inherited</tax>
+        <owner>person1</owner>
+	<death_year>2012</death_year>
+	<death_month>12</death_month>
+	<decedent_started_rmds>True</decedent_started_rmds>
+    </account>
+
+    <account name="TIAA_401K">
+        <balance>367118</balance>
+        <equity>0.81</equity>
+        <bond>0.19</bond>
+        <tax>traditional</tax>
+        <owner>person1</owner>
+    </account>
+
+    <account name="Roth_IRA">
+        <balance>172451</balance>
+        <equity>1.00</equity>
+        <bond>0.00</bond>
+        <tax>roth</tax>
+        <owner>person1</owner>
+    </account>
+
+    <account name="Spouse_Trad">
+        <balance>212170</balance>
+        <equity>1.00</equity>
+        <bond>0.00</bond>
+        <tax>traditional</tax>
+        <owner>person2</owner>
+    </account>
+
+    <account name="Spouse_Roth">
+        <balance>60726</balance>
+        <equity>0.85</equity>
+        <bond>0.15</bond>
+        <tax>roth</tax>
+        <owner>person2</owner>
+    </account>
+</portfolio>

@@ -8,8 +8,8 @@ def optimal_roth_conversion(
     filing_status: str, 
     AGI_base: float, 
     traditional_balance: float, 
-    tax_strategy: str, 
-    irmaa_strategy: str
+    roth_tax_bracket: str, 
+    roth_irmaa_threshold: str
 ) -> float:
     """
     Calculates the optimal Roth conversion amount to fill a strategic tax bracket 
@@ -27,8 +27,8 @@ def optimal_roth_conversion(
     tax_target_AGI, irmaa_target_MAGI = get_tax_planning_targets(
         year=year,
         inflation_this_year=inflation_index, 
-        tax_strategy=tax_strategy,
-        irmaa_strategy=irmaa_strategy,
+        roth_tax_bracket=roth_tax_bracket,
+        roth_irmaa_threshold=roth_irmaa_threshold,
         filing_status=filing_status
     )
     
