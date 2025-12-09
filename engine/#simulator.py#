@@ -278,7 +278,6 @@ class RetirementSimulator:
             AGI += ss_taxable # Taxable portion of SS contributes to AGI
             self.ssbenefit_paths[path_index, year_index] = ss_benefit # Save full benefit amount
 
-            ###print(f"Year {current_year}   RMDs {annual_rmd_required:,.0f}  Pension {pension_income:,.0f}   457b {def457b_income:,.0f}    Trust Income {trust_income:,.0f}   SS {ss_benefit:,.0f}")
             # ----------------------------
             # STEP 2 - PLAN ROTH conversions (do NOT mutate accounts here)
             # ----------------------------

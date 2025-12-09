@@ -113,7 +113,7 @@ class AccountsIncomeEngine:
                 return max(factor, 0.70) # Floor at age 62 (approx)
 
         # --- Main Function Logic ---
-        year_index = current_year - self.inputs.current_year
+        year_index = current_year - self.inputs.current_year + 2 # year_index starts 2 years prior to current year
         total_ss_benefit = 0.0
         
         fra_amt_p1 = self.inputs.person1_ss_fra * 12 # convert monthly amount to annual ammount
@@ -150,7 +150,7 @@ class AccountsIncomeEngine:
                 fra_age_years=p2_fra_age_calc
             )
             total_ss_benefit += fra_amt_p2 * factor_p2
-            
+        
         # 3. Apply Inflation
         ss_benefit_inflated = total_ss_benefit * inflation_index
 
@@ -372,10 +372,12 @@ class AccountsIncomeEngine:
         #
         p1_start_year = math.ceil(self.inputs.person1_birth_year + p1_draw_age_years + (self.inputs.person1_birth_month + p1_draw_age_months) / 12.0)
         
-        p1_divisor = 0.0
+        p1_multiplier = 0.0
 
         if current_year >= p1_start_year and p1_drawdown_years > 0:
-            p1_divisor = get_def457b_factor(current_year, p1_start_year, p1_drawdown_years)
+            p1_multiplier = get_def457b_factor(current_year, p1_start_year, p1_drawdown_years)
+
+        #print(f"457b Start year {p1_start_year}  current year {current_year}   Drawdown over {p1_drawdown_years} years   Multiplier = {p1_multiplier}")
 
         # --- 2. Calculate Divisor for Person 2 ---
         p2_draw_age_years = self.inputs.person2_def457b_age_years
@@ -387,10 +389,10 @@ class AccountsIncomeEngine:
         #***EVENTUALLY WANT TO CONVERT TO QUARTER SO THIS COULD START MID-YEAR
         #
         p2_start_year = math.ceil(self.inputs.person2_birth_year + p2_draw_age_years + (self.inputs.person2_birth_month + p2_draw_age_months) / 12.0)
-        p2_divisor = 0.0
+        p2_multiplier = 0.0
 
         if current_year >= p2_start_year and p2_drawdown_years > 0:
-             p2_divisor = get_def457b_factor(current_year, p2_start_year, p2_drawdown_years)
+             p2_multiplier = get_def457b_factor(current_year, p2_start_year, p2_drawdown_years)
 
         # --- 3. Iterate over all 457b accounts and calculate withdrawal ---
         # We iterate over the account METADATA (self.accounts) to get the owner
@@ -407,10 +409,10 @@ class AccountsIncomeEngine:
             def457b_amount = 0.0
             
             if balance > 0.0:
-                if owner == "person1" and p1_divisor > 0:
-                    def457b_amount = balance / p1_divisor
-                elif owner == "person2" and p2_divisor > 0:
-                    def457b_amount = balance / p2_divisor
+                if owner == "person1" and p1_multiplier > 0:
+                    def457b_amount = balance * p1_multiplier
+                elif owner == "person2" and p2_multiplier > 0:
+                    def457b_amount = balance * p2_multiplier
             
             total_income += def457b_amount
 
@@ -428,7 +430,7 @@ class AccountsIncomeEngine:
                        self.inputs.person1_pension_age_months / 12)
 
         if age_p1 >= pension_age_1:
-            amount1 = self.inputs.person1_pension_amount
+            amount1 = self.inputs.person1_pension_amount * 12 # need to convert monthly to annual
             if self.inputs.person1_pension_cola:
                 amount1 *= inflation_index
         
@@ -437,7 +439,7 @@ class AccountsIncomeEngine:
                        self.inputs.person2_pension_age_months / 12)
 
         if age_p2 >= pension_age_2:
-            amount2 = self.inputs.person2_pension_amount
+            amount2 = self.inputs.person2_pension_amount * 12 # need to convert monthly to annual
             if self.inputs.person2_pension_cola:
                 amount2 *= inflation_index
 
