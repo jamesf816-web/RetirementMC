@@ -278,7 +278,6 @@ class RetirementSimulator:
             AGI += ss_taxable # Taxable portion of SS contributes to AGI
             self.ssbenefit_paths[path_index, year_index] = ss_benefit # Save full benefit amount
 
-            ###print(f"Year {current_year}   RMDs {annual_rmd_required:,.0f}  Pension {pension_income:,.0f}   457b {def457b_income:,.0f}    Trust Income {trust_income:,.0f}   SS {ss_benefit:,.0f}")
             # ----------------------------
             # STEP 2 - PLAN ROTH conversions (do NOT mutate accounts here)
             # ----------------------------
@@ -371,14 +370,6 @@ class RetirementSimulator:
             self.base_spending_paths[path_index, year_index] = annual_base_spending
             self.lumpy_spending_paths[path_index, year_index] = annual_lumpy_needs
 
-            # Total desired cash for the year (Fixed Expenses + Desired Adjustable + Taxes)
-            total_annual_withdrawal_needed = (
-                total_fixed_expenses + 
-                annual_travel_desired + 
-                annual_gifting_desired + 
-                total_taxes
-            )
-
             # Cash from non-portfolio sources (Pension, SS, Def457b)
             total_annual_cash_in = (
                 pension_income + 
@@ -432,15 +423,22 @@ class RetirementSimulator:
             actual_travel = max(0, math.ceil(proposed_travel / 1000) * 1000)
             self.travel_paths[path_index, year_index] = actual_travel
 
+            total_annual_withdrawal_needed = (
+                total_fixed_expenses + 
+                actual_travel + 
+                total_taxes
+            ) # Note that this does not include giftong which is managed in Q4 below
+
             # Update the net portfolio draw for this year
             annual_portfolio_draw_needed = max(0.0, total_annual_withdrawal_needed - total_annual_cash_in)
             self.portfolio_withdrawal_paths[path_index, year_index] = annual_portfolio_draw_needed
+            # Total desired cash for the year (Fixed Expenses + Desired Adjustable + Taxes)
 
             # =========================================================================
             # --- STEP 5: QUARTERLY WITHDRAWAL AND INVESTMENT RETURNS ---
             # =========================================================================
 
-            # Annual amounts (these were computed above)
+            # Annual amounts (these were computed above) NOT INCLUDING GIFTING
             quarterly_rmd_draw = annual_rmd_required / 4.0
             quarterly_def457b_draw = def457b_income / 4.0
             quarterly_trust_income_draw = trust_income / 4.0
@@ -595,61 +593,61 @@ class RetirementSimulator:
                     # after both person conv executions
                     self.conversion_paths[path_index, year_index] = running_total
 
-                # -------------------------------
-                # 2) Gifting
-                # -------------------------------
-                leftover_for_gifting = max(
-                    0,
-                    spend_plan - (annual_base_spending + annual_lumpy_needs + actual_travel + total_taxes_final)
-                )
-                target_gifting = annual_gifting_desired * current_inflation_index
-                proposed_gifting = min(leftover_for_gifting, target_gifting)
+                    # -------------------------------
+                    # 2) Gifting
+                    # -------------------------------
+                    leftover_for_gifting = max(
+                        0,
+                        spend_plan - (annual_base_spending + annual_lumpy_needs + actual_travel + total_taxes_final)
+                    )
+                    target_gifting = annual_gifting_desired * current_inflation_index
+                    proposed_gifting = min(leftover_for_gifting, target_gifting)
 
-                # Estimate ordinary/LTCG portion for tax basis using simulation
-                simulate_only = True # simulating draws first
-                tax_sim_bal = copy.deepcopy(current_accounts)
-                res = self.withdrawal_engine._withdraw_from_hierarchy(
-                    cash_needed=proposed_gifting,
-                    accounts_bal=tax_sim_bal,
-                    simulate_only=simulate_only
-                )
-                ordinary_income = res.get("ordinary_inc", 0.0)
-                ltcg_income = res.get("ltcg_inc", 0.0)
-
-                taxable_gifting = final_ordinary_income_actual + ordinary_income + ltcg_income
-
-                # Use tax engine to get effective marginal rates for this income
-                federal_rate, state_rate = get_effective_marginal_rates(
-                    year=current_year,
-                    income=taxable_gifting,
-                    filing_status=self.filing_status,
-                    state_of_residence=self.state_of_residence,
-                    age1=current_age_person1,
-                    age2=current_age_person2,
-                    inflation_index=current_inflation_index
-                )
-                total_rate = 1 + federal_rate + state_rate  # scale factor for reducing withdrawal
-
-                # Optionally, define a target MAGI to limit gifting for IRMAA/fill purposes
-                MAGI_limit = float('inf')  # replace with a specific target if needed
-                if taxable_gifting > MAGI_limit:
-                    over = taxable_gifting - MAGI_limit
-                    proposed_gifting -= over / total_rate
-
-                # Round to nearest $1,000
-                actual_gifting = max(0, math.ceil(proposed_gifting / 1000) * 1000)
-                self.gifting_paths[path_index, year_index] = actual_gifting
-
-                # Execute withdrawal from portfolio
-                simulate_only = False # doing actual portfolio draw
-                if actual_gifting > 0:
-                    withdrawal_result = self.withdrawal_engine._withdraw_from_hierarchy(
-                        cash_needed=actual_gifting,
-                        accounts_bal=current_accounts,
+                    # Estimate ordinary/LTCG portion for tax basis using simulation
+                    simulate_only = True # simulating draws first
+                    tax_sim_bal = copy.deepcopy(current_accounts)
+                    res = self.withdrawal_engine._withdraw_from_hierarchy(
+                        cash_needed=proposed_gifting,
+                        accounts_bal=tax_sim_bal,
                         simulate_only=simulate_only
                     )
-                    final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
-                    final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
+                    ordinary_income = res.get("ordinary_inc", 0.0)
+                    ltcg_income = res.get("ltcg_inc", 0.0)
+
+                    taxable_gifting = final_ordinary_income_actual + ordinary_income + ltcg_income
+
+                    # Use tax engine to get effective marginal rates for this income
+                    federal_rate, state_rate = get_effective_marginal_rates(
+                        year=current_year,
+                        income=taxable_gifting,
+                        filing_status=self.filing_status,
+                        state_of_residence=self.state_of_residence,
+                        age1=current_age_person1,
+                        age2=current_age_person2,
+                        inflation_index=current_inflation_index
+                    )
+                    total_rate = 1 + federal_rate + state_rate  # scale factor for reducing withdrawal
+
+                    # Optionally, define a target MAGI to limit gifting for IRMAA/fill purposes
+                    MAGI_limit = float('inf')  # replace with a specific target if needed
+                    if taxable_gifting > MAGI_limit:
+                        over = taxable_gifting - MAGI_limit
+                        proposed_gifting -= over / total_rate
+
+                    # Round to nearest $1,000
+                    actual_gifting = max(0, math.ceil(proposed_gifting / 1000) * 1000)
+                    self.gifting_paths[path_index, year_index] = actual_gifting
+
+                    # Execute withdrawal from portfolio
+                    simulate_only = False # doing actual portfolio draw
+                    if actual_gifting > 0:
+                        withdrawal_result = self.withdrawal_engine._withdraw_from_hierarchy(
+                            cash_needed=actual_gifting,
+                            accounts_bal=current_accounts,
+                            simulate_only=simulate_only
+                        )
+                        final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
+                        final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
 
                 # ---------------------------------------------------------------------
                 # 3) APPLY QUARTERLY RETURNS
@@ -982,8 +980,8 @@ class RetirementSimulator:
         success_rate = np.mean(portfolio_end > success) * 100
         minimum_annual_balance = np.min(self.portfolio_paths, axis=1)
         avoid_ruin_rate = np.mean(minimum_annual_balance > avoid_ruin) * 100
-        
-        # --- START FIX: Transpose account_paths and filter to XML-defined names ---
+
+        # Transpose account_paths and filter to XML-defined names ---
         num_paths, num_years = self.portfolio_paths.shape
 
         account_paths_list = getattr(self, 'account_paths', [])

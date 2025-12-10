@@ -147,7 +147,9 @@ def register_editor_callbacks(app):
             "owner": "person1",
             "basis": None,
             "income": None,
-            "rmd_factor_table": None
+            "death_year": None,
+            "death_month": None,
+            "decedent_started_rmds": None
         }
         return current_rows + [new_row]
 

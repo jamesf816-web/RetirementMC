@@ -78,6 +78,8 @@ def register_simulation_callbacks(app):
                 tax_strategy=tax_strategy,
                 roth_tax_bracket=roth_tax_bracket,
                 roth_irmaa_threshold=roth_irmaa_threshold,
+                success_threshold=clean_currency(success_threshold),
+                avoid_ruin_threshold=clean_currency(avoid_ruin_threshold),
                 ss_fail_year=ss_fail_year,
                 ss_fail_percent=clean_percent(ss_fail_percent),
             )

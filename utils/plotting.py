@@ -10,7 +10,7 @@ import callbacks.simulation_callbacks as sim
 # ------------------------------------------------------------------
 # HELPER: Stacked area charts (Portfolio, Income, Spending)
 # ------------------------------------------------------------------
-def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_theme="Vivid"):
+def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_theme, start_index):
     """
     Super-robust version – handles None, empty lists, zero-sim arrays, etc.
     """
@@ -59,12 +59,12 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
     }
 
     colors = px.colors.qualitative.Vivid if color_theme == "Vivid" else px.colors.qualitative.Plotly
-
+    start_index = 2 # defauklt to skip 2 prior year
     for idx, (label, _) in enumerate(valid_trajectories):
-        y = percentile_data[label]#[1:]  # skip first year - prior to start of MC
+        y = percentile_data[label][start_index:]  # skip to start_index
 
         fig.add_trace(go.Scatter(
-            x=sim.years, #[1:], # skip first year - prior to start of MC SAME AS Y slice
+            x=sim.years[start_index:], # skip to start_index
             y=y,
             mode='lines',
             line=dict(width=0),
@@ -79,6 +79,7 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
         title=title + suffix,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
+        yaxis=dict(range=[0, None]),
         template="plotly_white",
         hovermode="x unified",
         height=500,
@@ -89,7 +90,7 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
 
 # ------------------------------------------------------------------
 # HELPER: Regular multi-line charts (MAGI, Travel/Gifting, etc.)
-def create_multi_line_plot(trajectories_dict, title, yaxis_title):
+def create_multi_line_plot(trajectories_dict, title, yaxis_title, start_index):
     """
     Plots median + 10th/90th percentiles.
     Now 100% safe against None, empty arrays, or zero simulations.
@@ -132,9 +133,10 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
     # --------------------------------------------------
     # We have real data → plot it
     # --------------------------------------------------
+    start_index = 2 # defauklt to skip 2 prior year
     for label, data in valid_data.items():
-        data_trimmed = data #[:, 2:] if data.shape[1] > 2 else data #this slices off forst 2 years
-        years = sim.years# [2:] if len(sim.years) > 2 else sim.years #this slices off first 2 years
+        data_trimmed = data[:, start_index:] if data.shape[1] > 2 else data #this slices to start at start_index
+        years = sim.years[start_index:] if len(sim.years) > 2 else sim.years #this slices to start at start_index
 
         y_median = np.median(data_trimmed, axis=0)
         fig.add_trace(go.Scatter(
@@ -159,6 +161,7 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title):
         title=title,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
+        yaxis=dict(range=[0, None]),
         template="plotly_white",
         hovermode="x unified",
         height=400,
@@ -237,24 +240,26 @@ def generate_all_plots(results: dict, inputs, elapsed):
     # --------------------------------------------------
     all_figures = {}
 
-    # Stacked charts
-    all_figures["portfolio-median"] = create_stacked_figure(portfolio_trajectories, 50, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid")
-    all_figures["portfolio-p10"]    = create_stacked_figure(portfolio_trajectories, 10, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid")
-    all_figures["portfolio-p90"]    = create_stacked_figure(portfolio_trajectories, 90, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid")
-
-    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Vivid")
-    all_figures["income-p10"]    = create_stacked_figure(income_trajectories, 10, "Income Sources", "Annual Income ($)", "Vivid")
-    all_figures["income-p90"]    = create_stacked_figure(income_trajectories, 90, "Income Sources", "Annual Income ($)", "Vivid")
-
-    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Vivid")
-    all_figures["spending-p10"]    = create_stacked_figure(spending_trajectories, 10, "Spending Categories", "Annual Spending ($)", "Vivid")
-    all_figures["spending-p90"]    = create_stacked_figure(spending_trajectories, 90, "Spending Categories", "Annual Spending ($)", "Vivid")
+    # Stacked median charts
+    all_figures["portfolio-median"] = create_stacked_figure(portfolio_trajectories, 50, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1)
+    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Vivid", 2)
+    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Vivid", 2)
 
     # Line charts
-    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)")
-    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)")
-    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)")
-    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)")
+    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)", 2)
+    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)", 2)
+    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)", 2)
+    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)", 2)
+
+    # Stacked 10% CL charts
+    all_figures["portfolio-p10"]    = create_stacked_figure(portfolio_trajectories, 10, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1)
+    all_figures["income-p10"]    = create_stacked_figure(income_trajectories, 10, "Income Sources", "Annual Income ($)", "Vivid", 2)
+    all_figures["spending-p10"]    = create_stacked_figure(spending_trajectories, 10, "Spending Categories", "Annual Spending ($)", "Vivid", 2)
+
+    # Stacked 90% CL charts
+    all_figures["portfolio-p90"]    = create_stacked_figure(portfolio_trajectories, 90, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1)
+    all_figures["income-p90"]    = create_stacked_figure(income_trajectories, 90, "Income Sources", "Annual Income ($)", "Vivid", 2)
+    all_figures["spending-p90"]    = create_stacked_figure(spending_trajectories, 90, "Spending Categories", "Annual Spending ($)", "Vivid", 2)
 
     return [all_figures[id] for id in get_figure_ids()]
 
