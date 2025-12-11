@@ -8,12 +8,6 @@
     <magi_1>411200</magi_1>
     <magi_2>366069</magi_2>
     
-    <success_threshold>0.0</success_threshold>
-    <avoid_ruin_threshold>0.0</avoid_ruin_threshold>
-
-    <ss_fail_year>2033</ss_fail_year>
-    <ss_fail_percent>0.23</ss_fail_percent>
-
     <person1>
         <birth_year>1965</birth_year>
         <birth_month>8</birth_month>

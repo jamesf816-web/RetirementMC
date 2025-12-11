@@ -122,7 +122,7 @@ def get_indexed_federal_constants(year: int, inflation_index: float, filing_stat
     """
     
     # Determine inflation factor: 1.0 if before BASE_YEAR, else cumulative index
-    inflation_factor = inflation_index if year >= BASE_YEAR else 1.0
+    inflation_factor = inflation_index if year > BASE_YEAR else 1.0
 
     # Get Base Data
     base_ord_brackets = ORDINARY_BRACKETS_2026.get(filing_status, ORDINARY_BRACKETS_2026["married_filing_jointly"])

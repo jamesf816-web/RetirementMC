@@ -67,7 +67,7 @@ main_layout = html.Div(
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
                 dcc.Slider(
-                    id='nsims', min=1, max=30000, step=100, value=100,
+                    id='nsims', min=1, max=30000, step=100, value=1000,
                     marks={i: f"{i//1000}k" for i in range(0, 31000, 2000)},
                     tooltip={"placement": "bottom", "always_visible": True},
                 ),
@@ -263,7 +263,7 @@ main_layout = html.Div(
 
             # Item 2C: Max Roth Conv
             html.Div(
-                pretty_currency_input('max_roth', value=240000, label="Max Roth Conv"),
+                pretty_currency_input('max_roth', value=160000, label="Max Roth Conv"),
                 style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
             ),
 
@@ -328,13 +328,13 @@ main_layout = html.Div(
                 dcc.Dropdown(
                     id='roth_irmaa_threshold',
                     options=[
-                        {'label': 'Stay under Tier 0 ($218k)', 'value': 'fill_IRMAA_0'},
-                        {'label': 'Stay under Tier 1 ($274k)', 'value': 'fill_IRMAA_1'},
-                        {'label': 'Stay under Tier 2 ($342k)', 'value': 'fill_IRMAA_2'},
-                        {'label': 'Stay under Tier 3 ($410k)', 'value': 'fill_IRMAA_3'},
-                        {'label': 'Stay under Tier 4 ($750k)', 'value': 'fill_IRMAA_4'},
+                        {'label': 'Stay under Tier 1 ($218k)', 'value': 'fill_IRMAA_1'},
+                        {'label': 'Stay under Tier 2 ($274k)', 'value': 'fill_IRMAA_2'},
+                        {'label': 'Stay under Tier 3 ($342k)', 'value': 'fill_IRMAA_3'},
+                        {'label': 'Stay under Tier 4 ($410k)', 'value': 'fill_IRMAA_4'},
+                        {'label': 'Stay under Tier 5 ($750k)', 'value': 'fill_IRMAA_5'},
                     ],
-                    value='fill_IRMAA_3',
+                    value='fill_IRMAA_4',
                     # Adjusted style to match height of input boxes (36px)
                     style={'fontSize': 16, 'height': '40px', 'lineHeight': '15px', 'textAlign': 'center'}
                 )
@@ -360,7 +360,7 @@ main_layout = html.Div(
 
             # Item 3D: SS Trust Fund Failure Year
             html.Div(
-                pretty_year_input('ss_fail_year', value=int(2033), label="SS Fail Year"),
+                pretty_year_input('ss_fail_year', value=int(2099), label="SS Fail Year"),
                 style={'flex': '1', 'minWidth': '120px', 'textAlign': 'center'}
             ),
             

@@ -52,6 +52,7 @@ from engine.accounts_income import AccountsIncomeEngine # importing a class here
 from engine.withdrawal_engine import WithdrawalEngine # importing a class here
 
 from engine.tax_engine import calculate_taxes, get_effective_marginal_rates
+from engine.tax_planning import get_tax_planning_targets
 from engine.market_generator import generate_returns, calculate_annual_inflation
         
 class RetirementSimulator:
@@ -119,11 +120,13 @@ class RetirementSimulator:
         self.taxes_paths = None
         self.magi_paths = None
         self.base_spending_paths = None
+        self.mortgage_expense_paths = None
         self.lumpy_spending_paths = None
         self.ssbenefit_paths = None
         self.portfolio_withdrawal_paths = None
         self.trust_income_paths = None
         self.rmd_paths = None
+        self.salary_paths = None
         self.def457b_income_paths = None
         self.pension_paths = None
         self.medicare_paths = None
@@ -176,11 +179,13 @@ class RetirementSimulator:
         self.taxes_paths = np.zeros((num_paths, self.n_full))
         self.magi_paths = np.zeros((num_paths, self.n_full))
         self.base_spending_paths = np.zeros((num_paths, self.n_full))
+        self.mortgage_expense_paths = np.zeros((num_paths, self.n_full))
         self.lumpy_spending_paths = np.zeros((num_paths, self.n_full))
         self.ssbenefit_paths = np.zeros((num_paths, self.n_full))
         self.portfolio_withdrawal_paths = np.zeros((num_paths, self.n_full))
         self.trust_income_paths = np.zeros((num_paths, self.n_full))
         self.rmd_paths = np.zeros((num_paths, self.n_full))
+        self.salary_paths = np.zeros((num_paths, self.n_full))
         self.def457b_income_paths = np.zeros((num_paths, self.n_full))
         self.pension_paths = np.zeros((num_paths, self.n_full))
         self.medicare_paths = np.zeros((num_paths, self.n_full))
@@ -208,11 +213,6 @@ class RetirementSimulator:
         # Initialize state for this path
         current_accounts = copy.deepcopy(self.initial_accounts)
 
-        annual_rmd_required = 0.0   # This year's total RMD (calculated once, drawn quarterly)
-        final_ordinary_income_actual = 0.0
-        total_taxes_final = 0.0
-        spend_plan = 0.0
-        
         # Initialize path-specific history arrays
         # MAGI history needs to be long enough to track 2 years prior for IRMAA (index offset)
         magi_path = [0.0] * 2 + [0.0] * self.num_years
@@ -226,56 +226,65 @@ class RetirementSimulator:
         self.portfolio_paths[path_index, 0] = self._get_total_portfolio(self.initial_accounts)
         self.account_paths[path_index][0] = copy.deepcopy(self.initial_accounts)
         self.magi_paths[path_index, 0] = self.inputs.magi_1  # MAGI1
-
         # Index 1 -> 2025 (input accounts)
-        self.portfolio_paths[path_index, 1] = self._get_total_portfolio(self.inputs.accounts)
-        self.account_paths[path_index][1] = copy.deepcopy(self.inputs.accounts)
+        self.portfolio_paths[path_index, 1] = self._get_total_portfolio(self.initial_accounts)
+        self.account_paths[path_index][1] = copy.deepcopy(self.initial_accounts)
         self.magi_paths[path_index, 1] = self.inputs.magi_2  # MAGI2
         
         for i in range(self.num_years):
             year_index = i + 2 #start simulations at index 2
+            current_accounts = copy.deepcopy(self.account_paths[path_index][year_index - 1])
             current_year = self.current_year + i
             current_inflation_index = inflation_path[i]
+            
+            #print(f"Year {current_year} inflation index {current_inflation_index:.2f}")
+            
             # Update ages
             current_age_person1 = self.current_age_p1 + i
-            current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else Nonne
-
+            current_age_person2 = self.current_age_p2 + i if self.current_age_p2 is not None else None
+            
+            # initialize variables for this year of simulation
+            annual_rmd_required = 0.0
+            final_ordinary_income_actual = 0.0
+            final_ltcg_income_actual = 0.0
+            total_taxes_final = 0.0
+            spend_plan = 0.0
+            # AGI_estimate is calculated progressively
+            AGI_estimate = 0.0
+            actual_withdrawals = 0.0
+        
             # =========================================================================
             # --- STEP 1: CALCULATE ANNUAL INCOME AND RMDs ---
             # =========================================================================
-            # AGI is calculated progressively
-            AGI = 0.0
-             
+
             # RMDs (Required Minimum Distributions)
-            # Unpack the total RMD for AGI and the dictionary for quarterly withdrawals.
+            # Unpack the total RMD for AGI_estimate and the dictionary for quarterly withdrawals.
             annual_rmd_required, rmds_by_account_annual = self.accounts_income.compute_rmds(current_accounts, current_year)
             # Store the total annual RMD amount for the path
             self.rmd_paths[path_index, year_index] = annual_rmd_required
-            AGI += annual_rmd_required
+            AGI_estimate += annual_rmd_required
             
-            # Pension/Def457b Income
+            # ORDINARY Income streams
+            salary_income = self.accounts_income.compute_salary_income(current_year, current_inflation_index)
             pension_income = self.accounts_income.compute_pension_income(current_year, current_inflation_index)
             def457b_income = self.accounts_income.compute_def457b_income(current_accounts, current_year)
-            
-            # Trust Income (New Addition)
             trust_income = self.accounts_income.compute_trust_income(
                 current_accounts, 
                 current_year, 
                 current_inflation_index
             )
             
-            # Add all fully taxable (Ordinary) income sources to AGI
-            AGI += pension_income + def457b_income + trust_income
+            # Add all fully taxable (Ordinary) income sources to AGI_estimate
+            AGI_estimate += salary_income + pension_income + def457b_income + trust_income
             
             # Save paths for tracking/reporting
+            self.salary_paths[path_index, year_index] = salary_income
             self.pension_paths[path_index, year_index] = pension_income
             self.def457b_income_paths[path_index, year_index] = def457b_income
             self.trust_income_paths[path_index, year_index] = trust_income
             
             # Social Security Income
             ss_benefit = self.accounts_income.compute_ss_benefit(current_year, current_inflation_index)
-            ss_taxable = self.accounts_income.compute_taxable_ss(ss_benefit, AGI, self.inputs.filing_status) 
-            AGI += ss_taxable # Taxable portion of SS contributes to AGI
             self.ssbenefit_paths[path_index, year_index] = ss_benefit # Save full benefit amount
 
             # ----------------------------
@@ -294,12 +303,12 @@ class RetirementSimulator:
                     year=current_year,
                     inflation_index=current_inflation_index,
                     filing_status=self.filing_status,
-                    AGI_base=AGI,  # use the AGI *so far* as the base for planning
+                    AGI_base=AGI_estimate,  # use the AGI *so far* as the base for planning
                     traditional_balance=p2_trad_bal,
                     roth_tax_bracket=self.roth_tax_bracket,
                     roth_irmaa_threshold=self.roth_irmaa_threshold
                 )
-            total_conversion_plan += conv_p2
+            conv_p2 = min(conv_p2, self.max_roth)
 
             # Person 1 planned conversion
             p1_trad_accts = [k for k, v in current_accounts.items()
@@ -311,25 +320,30 @@ class RetirementSimulator:
                     year=current_year,
                     inflation_index=current_inflation_index,
                     filing_status=self.filing_status,
-                    AGI_base=AGI + conv_p2,  # plan P1 after P2 (AGI increases if P2 converts)
+                    AGI_base=AGI_estimate + conv_p2,  # plan P1 after P2 (AGI increases if P2 converts)
                     traditional_balance=p1_trad_bal,
                     roth_tax_bracket=self.roth_tax_bracket,
                     roth_irmaa_threshold=self.roth_irmaa_threshold
                 )
-            total_conversion_plan += conv_p1
+            conv_p1 = min(conv_p1, self.max_roth-conv_p2)         
+            total_conversion_plan = conv_p1 + conv_p2
 
             # Keep conv_p1/conv_p2 locally so we can execute them in Q4 later.
             planned_conv = {"person1": conv_p1, "person2": conv_p2}
 
-            # =========================================================================
-            # --- STEP 3: TAX CALCULATION ---
-            # =========================================================================
-            MAGI = AGI # Simplified: MAGI is often close to AGI, conversion is included.
+            #print(f"AGI before ROTH {AGI_estimate:,.0f}   AGI after ROTH {AGI_estimate+total_conversion_plan:,.0f}")
+
             
+            AGI_estimate += total_conversion_plan
+            
+            # =========================================================================
+            # --- STEP 3: Initial Estimated TAX CALCULATION ---
+            # --- ordinary income only, including ROTH conversion ---
+            # =========================================================================
             # Get MAGI from 2 years prior for IRMAA calculation (offset by 2)
-            magi_two_years_ago = magi_path[year_index - 2] 
+            magi_two_years_ago = self.magi_paths[path_index, year_index - 2] 
             
-            total_taxes, federal_tax, medicare_irmaa = calculate_taxes(
+            state_tax, federal_tax, medicare_irmaa = calculate_taxes(
                 year=current_year,
                 inflation_index=current_inflation_index,
                 filing_status=self.filing_status,           
@@ -337,53 +351,96 @@ class RetirementSimulator:
                 age1=current_age_person1,
                 age2=current_age_person2,
                 magi_two_years_ago=magi_two_years_ago,
-                AGI=AGI,
-                taxable_ordinary=AGI, # Simplified: Assumes AGI is the ordinary income base
-                lt_cap_gains=0.0,     # Placeholder for Taxable account gains
+                AGI=AGI_estimate,
+                taxable_ordinary=AGI_estimate, # AGI at this stage is all ordinary income
+                lt_cap_gains=0.0,              # salary, RMDs, pension, 457b, Trust income,  ROTH conversions
                 qualified_dividends=0.0, 
                 social_security_income=ss_benefit,
             )
+            initial_estimated_tax = state_tax + federal_tax
 
             # =========================================================================
             # --- STEP 4: DETERMINE ANNUAL WITHDRAWAL NEED ---
             # =========================================================================
             # This calculates the total cash DESIRED/REQUIRED from the portfolio for the year.
-
-            (total_fixed_expenses, 
-             annual_base_spending, 
-             annual_lumpy_needs, 
-             annual_home_repair,
-             annual_travel_desired, 
+            (annual_base_spending,
+             mortgage_expense,
+             lumpy_needs,
+             annual_travel_desired,
              annual_gifting_desired) = self._calculate_annual_spending_needs(
                 current_year, 
                 current_inflation_index
             )
+            
+            #print(f"Lumpy {lumpy_needs:,.2f}  Mortgage {mortgage_expense:,.2f}")
 
-            # --- Define spend_plan from prior year portfolio balance ---
+            self.base_spending_paths[path_index, year_index] = annual_base_spending
+            self.mortgage_expense_paths[path_index, year_index] = mortgage_expense
+            self.lumpy_spending_paths[path_index, year_index] = lumpy_needs
+
+            initial_expense_estimate = (
+                annual_base_spending +
+                mortgage_expense +
+                lumpy_needs +
+                annual_travel_desired +
+                annual_gifting_desired +
+                initial_estimated_tax)
+
+            # Income (Salary, Pension, SS) and Mandatory/fixed Portfolio Draws (Trust income, 457b, RMDs)
+            total_annual_cash_in = (
+                salary_income +
+                pension_income + 
+                ss_benefit +
+                def457b_income +
+                trust_income +
+                annual_rmd_required
+            )
+            mandatory_portfolio_withdrawals = def457b_income + trust_income + annual_rmd_required
+            estimated_additional_withdrawal_needed = max(0.0, initial_expense_estimate - total_annual_cash_in)
+            initial_portfolio_draw_estimate = mandatory_portfolio_withdrawals + estimated_additional_withdrawal_needed
+
+            # now calculate estimated taxes on this draw as added draw needed to fund tax payments
+            # Estimate ordinary/LTCG portion for tax basis using withdrawal_engine simulation
+            tax_sim_bal = copy.deepcopy(current_accounts)
+            simulate_only = True
+            res = self.withdrawal_engine._withdraw_from_hierarchy(
+                cash_needed=initial_portfolio_draw_estimate,
+                accounts_bal=tax_sim_bal,
+                simulate_only=simulate_only
+            )
+            ordinary = res.get("ordinary_inc", 0.0)
+            ltcg = res.get("ltcg_inc", 0.0)
+
+            AGI_estimate += ordinary + ltcg
+            state_tax, federal_tax, medicare_irmaa = calculate_taxes(
+                year=current_year,
+                inflation_index=current_inflation_index,
+                filing_status=self.filing_status,           
+                state_of_residence=self.state_of_residence, 
+                age1=current_age_person1,
+                age2=current_age_person2,
+                magi_two_years_ago=magi_two_years_ago,
+                AGI=AGI_estimate,
+                taxable_ordinary=AGI_estimate, # AGI at this stage is all ordinary income
+                lt_cap_gains=0.0,              # salary, RMDs, pension, 457b, Trust income,  ROTH conversions
+                qualified_dividends=0.0, 
+                social_security_income=ss_benefit,
+            )
+            iterated_estimated_tax = state_tax + federal_tax
+            iterated_expense_estimate = initial_expense_estimate - initial_estimated_tax + iterated_estimated_tax
+       
+            # --- Define spend_plan from percentage of prior year portfolio balance ---
             prior_year_balance = self.portfolio_paths[path_index, year_index - 1]
             spend_plan = clean_percent(self.inputs.withdrawal_rate) * prior_year_balance
             self.plan_paths[path_index, year_index] = spend_plan
 
             # --- leftover for discretionary spending ---
-            leftover_cash = max(0.0, spend_plan - annual_base_spending - annual_lumpy_needs)
+            leftover_cash = max(0.0, spend_plan - iterated_expense_estimate)
             
-            self.base_spending_paths[path_index, year_index] = annual_base_spending
-            self.lumpy_spending_paths[path_index, year_index] = annual_lumpy_needs
-
-            # Cash from non-portfolio sources (Pension, SS, Def457b)
-            total_annual_cash_in = (
-                pension_income + 
-                def457b_income + 
-                ss_benefit
-            )
-
             # -------------------------------
             # Discretionary Travel
             # -------------------------------
-            leftover_cash = max(0, spend_plan - (annual_base_spending + annual_lumpy_needs + total_taxes_final))
-
-            # Travel target: full until 2035, then half, inflated
-            target_travel = annual_travel_desired if current_year <= 2035 else annual_travel_desired / 2
+            target_travel = annual_travel_desired if current_year <= 2050 else annual_travel_desired / 2 # reduce travel late in life
             target_travel *= current_inflation_index
             proposed_travel = min(target_travel, leftover_cash)
 
@@ -398,68 +455,83 @@ class RetirementSimulator:
             travel_ordinary = res.get("ordinary_inc", 0.0)
             travel_ltcg = res.get("ltcg_inc", 0.0)
 
-            # Compute MAGI including Social Security and prior ordinary/LTCG income
-            MAGI_proposed_travel = final_ordinary_income_actual + travel_ordinary + travel_ltcg + ss_benefit
+            AGI_proposed_travel = AGI_estimate + travel_ordinary + travel_ltcg
+            
             # Use tax engine to get effective marginal rates for this income
             federal_rate, state_rate = get_effective_marginal_rates(
                 year=current_year,
-                income=MAGI_proposed_travel,
+                income=AGI_proposed_travel,
                 filing_status=self.filing_status,
                 state_of_residence=self.state_of_residence,
                 age1=current_age_person1,
                 age2=current_age_person2,
                 inflation_index=current_inflation_index
             )
-            total_rate = 1 + federal_rate + state_rate
+            total_rate = federal_rate + state_rate
+
+            # ----------------------------------------------------------
+            # Retrieve the SAME tax/IRMAA ceilings used for ROTH Conversions
+            # ----------------------------------------------------------
+            tax_target_AGI, irmaa_target_AGI = get_tax_planning_targets(
+                year=current_year,
+                inflation_this_year=current_inflation_index,
+                roth_tax_bracket=self.roth_tax_bracket,
+                roth_irmaa_threshold=self.roth_irmaa_threshold,
+                filing_status=self.filing_status
+            )
+
+            MAGI_limit = min(tax_target_AGI, irmaa_target_AGI)
+
+            print(f"Year {current_year} TAX Limit {tax_target_AGI:,.0f}  IRMAA Limit {irmaa_target_AGI:,.0f}  AGI with proposed Travel {AGI_proposed_travel:,.0f}")
 
             # Reduce proposed travel if MAGI exceeds your target threshold (if any)
-            # If you have a target MAGI for IRMAA/fill strategy, define it here:
-            MAGI_limit = float('inf')  # or a specific target if needed
-            if MAGI_proposed_travel > MAGI_limit:
-                over = MAGI_proposed_travel - MAGI_limit
-                proposed_travel -= over / total_rate
+            if AGI_proposed_travel > MAGI_limit:
+                over = AGI_proposed_travel - MAGI_limit
+                if over > 0:
+                    proposed_travel -= over / total_rate
   
             # Round to nearest $1,000 and ensure non-negative
             actual_travel = max(0, math.ceil(proposed_travel / 1000) * 1000)
             self.travel_paths[path_index, year_index] = actual_travel
 
-            total_annual_withdrawal_needed = (
-                total_fixed_expenses + 
-                actual_travel + 
-                total_taxes
-            ) # Note that this does not include giftong which is managed in Q4 below
+            if actual_travel > 0:
+                # Execute the ACTUAL withdrawal
+                res_actual = self.withdrawal_engine._withdraw_from_hierarchy(
+                    cash_needed=actual_travel,
+                    accounts_bal=current_accounts,
+                    simulate_only=False
+                )
 
+                travel_ordinary_actual = res_actual.get("ordinary_inc", 0.0)
+                travel_ltcg_actual = res_actual.get("ltcg_inc", 0.0)
+
+                # Update AGI_estimate with income from planned travel withdrawals
+                AGI_estimate += travel_ordinary_actual + travel_ltcg_actual
+
+            total_annual_withdrawal_needed = iterated_expense_estimate - annual_travel_desired + actual_travel
+            # this INCLUDES planned gifting
+
+            # =========================================================================
             # Update the net portfolio draw for this year
-            annual_portfolio_draw_needed = max(0.0, total_annual_withdrawal_needed - total_annual_cash_in)
-            self.portfolio_withdrawal_paths[path_index, year_index] = annual_portfolio_draw_needed
-            # Total desired cash for the year (Fixed Expenses + Desired Adjustable + Taxes)
+            # =========================================================================
+   
+            annual_portfolio_draw_needed = total_annual_withdrawal_needed - total_annual_cash_in
 
             # =========================================================================
             # --- STEP 5: QUARTERLY WITHDRAWAL AND INVESTMENT RETURNS ---
             # =========================================================================
-
-            # Annual amounts (these were computed above) NOT INCLUDING GIFTING
-            quarterly_rmd_draw = annual_rmd_required / 4.0
-            quarterly_def457b_draw = def457b_income / 4.0
-            quarterly_trust_income_draw = trust_income / 4.0
-            quarterly_portfolio_draw_needed = annual_portfolio_draw_needed / 4.0
 
             # Slice the 4 quarterly returns
             eq_q_returns   = equity_q_path[i * 4 : (i + 1) * 4]
             bond_q_returns = bond_q_path[i * 4 : (i + 1) * 4]
 
             # Track realized tax character for this year's income accounting
-            final_ordinary_income_actual = 0.0
-            final_ltcg_income_actual = 0.0
 
             for q in range(4):
-                # 1. Original accounts
-                current_accounts = current_accounts  # your baseline
-
-                # 2. Deepcopy for tax simulation (already in your code)
+                #  Deepcopy for tax simulation (already in your code)
                 tax_sim_bal = copy.deepcopy(current_accounts)
 
-                # 3. Deepcopy for actual ROTH conversions (safe isolation)
+                #  Deepcopy for actual ROTH conversions (safe isolation)
                 conversion_accounts = copy.deepcopy(current_accounts)
             
                 # ---------------------------------------------------------------------
@@ -470,6 +542,7 @@ class RetirementSimulator:
                 # from each specific account, as required by law.
                 
                 # 1a) RMD Draw: Withdraw the required amount from each specific account
+                quarterly_rmd_total = 0.0
                 for acct_name, annual_rmd_amount in rmds_by_account_annual.items():
                     # Look up the account state
                     acct = current_accounts.get(acct_name)
@@ -482,7 +555,10 @@ class RetirementSimulator:
                         draw_amount = min(quarterly_rmd, acct["balance"])
                         
                         acct["balance"] -= draw_amount
+                        quarterly_rmd_total += draw_amount
                         final_ordinary_income_actual += draw_amount # RMD is ordinary income
+                        # for plotting RMDs, Trust income and 457b income are displayed sperately so not included
+                        #actual_withdrawals += draw_amount
 
                 # 1b) Trust Income Draw: Withdraw the quarterly portion from Trust accounts
                 quarterly_trust_income_draw = trust_income / 4.0
@@ -499,11 +575,13 @@ class RetirementSimulator:
                         acct["balance"] -= draw_amount
                         trust_draw_remaining_q -= draw_amount
                         final_ordinary_income_actual += draw_amount # Trust Income is ordinary income
-                        
+                        # for plotting RMDs, Trust income and 457b income are displayed sperately so not included
+                        #actual_withdrawals += draw_amount
+
                         if trust_draw_remaining_q <= 0:
                             break # Trust income draw satisfied for the quarter
-
-                # 1c) Deferred 457b Income Draw: Withdraw the quarterly portion from 457b accounts
+                        
+                 # 1c) Deferred 457b Income Draw: Withdraw the quarterly portion from 457b accounts
                 quarterly_def457b_income_draw = def457b_income / 4.0
                 def457b_draw_remaining_q = quarterly_def457b_income_draw
 
@@ -515,22 +593,27 @@ class RetirementSimulator:
                         acct["balance"] -= draw_amount
                         def457b_draw_remaining_q -= draw_amount
                         final_ordinary_income_actual += draw_amount # Trust Income is ordinary income
-                        
+                        # for plotting RMDs, Trust income and 457b income are displayed sperately so not included
+                        #actual_withdrawals += draw_amount
+                         
                         if def457b_draw_remaining_q <= 0:
                             break # def457b income draw satisfied for the quarter
 
                 # ---------------------------------------------------------------------
                 # 2) RESIDUAL PORTFOLIO WITHDRAWAL (For remaining spending needs)
+                # Now exclude planned gifting so it can adjust dynamically
                 # ---------------------------------------------------------------------
                 
                 # annual_portfolio_draw_needed was calculated in STEP 4 (Total needs - Non-portfolio income)
-                # It is the amount that MUST be withdrawn from IRA/Roth/Taxable/Trust (beyond RMD/Trust draw)
-                quarterly_portfolio_draw_remaining = annual_portfolio_draw_needed / 4.0
+                # It is the amount that MUST be withdrawn from IRA/Roth/Taxable/Trust (beyond RMD/Trust/457b draw)
+                
+                quarterly_portfolio_draw_needed = (annual_portfolio_draw_needed - annual_gifting_desired) / 4.0 
 
                 simulate_only = False #doing actual portfolio draws now
-                quarterly_portfolio_draw_remaining = quarterly_portfolio_draw_needed
+                quarterly_portfolio_draw_remaining = quarterly_portfolio_draw_needed - quarterly_rmd_total - quarterly_trust_income_draw - quarterly_def457b_income_draw
                 if quarterly_portfolio_draw_remaining > 0:
-                    withdrawal_result = self.accounts_income._withdraw_from_hierarchy(
+                    actual_withdrawals += quarterly_portfolio_draw_remaining
+                    withdrawal_result = self.withdrawal_engine._withdraw_from_hierarchy(
                         cash_needed=quarterly_portfolio_draw_remaining,
                         accounts_bal=current_accounts,
                         simulate_only=simulate_only,
@@ -538,9 +621,8 @@ class RetirementSimulator:
                     final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
                     final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
 
-
                 # ---------------------------------------------------------------------
-                # 2) In Q4 do ROTH conversions and Gifting
+                # 3) In Q4 do ROTH conversions and Gifting
                 # ---------------------------------------------------------------------
                 if q == 3:
                     # Execute conversions in Q4 only
@@ -563,6 +645,14 @@ class RetirementSimulator:
                                 take = min(available, conv * (available / p2_total))
                                 # safety clamp
                                 take = min(take, remaining, current_accounts[n]["balance"])
+
+                                available = current_accounts[n]["balance"]
+                                # 1. Calculate the pro-rata share of the total conversion target (conv)
+                                pro_rata_share = conv * (available / p2_total)
+                                # 2. The amount to take is the minimum of the calculated share,
+                                # the remaining need, and the available balance.
+                                take = min(pro_rata_share, remaining, available)
+
                                 current_accounts[n]["balance"] -= take
                                 current_accounts[roth_target]["balance"] += take
                                 final_ordinary_income_actual += take   # conversions = ordinary income realized in Q4
@@ -582,8 +672,12 @@ class RetirementSimulator:
                                 if remaining <= 0:
                                     break
                                 available = current_accounts[n]["balance"]
-                                take = min(available, conv * (available / p1_total))
-                                take = min(take, remaining, current_accounts[n]["balance"])
+                                # 1. Calculate the pro-rata share of the total conversion target (conv)
+                                pro_rata_share = conv * (available / p1_total)
+                                # 2. The amount to take is the minimum of the calculated share,
+                                # the remaining need, and the available balance.
+                                take = min(pro_rata_share, remaining, available)
+
                                 current_accounts[n]["balance"] -= take
                                 current_accounts[roth_target]["balance"] += take
                                 final_ordinary_income_actual += take
@@ -593,61 +687,87 @@ class RetirementSimulator:
                     # after both person conv executions
                     self.conversion_paths[path_index, year_index] = running_total
 
-                    # -------------------------------
-                    # 2) Gifting
-                    # -------------------------------
-                    leftover_for_gifting = max(
-                        0,
-                        spend_plan - (annual_base_spending + annual_lumpy_needs + actual_travel + total_taxes_final)
-                    )
+                    # -------------------------------------
+                    # 2) Gifting — WITH TAX + IRMAA LIMITS
+                    # -------------------------------------
+
+                    # Dollar target (inflation adjusted)
                     target_gifting = annual_gifting_desired * current_inflation_index
-                    proposed_gifting = min(leftover_for_gifting, target_gifting)
 
-                    # Estimate ordinary/LTCG portion for tax basis using simulation
-                    simulate_only = True # simulating draws first
-                    tax_sim_bal = copy.deepcopy(current_accounts)
-                    res = self.withdrawal_engine._withdraw_from_hierarchy(
-                        cash_needed=proposed_gifting,
+                    # ----------------------------------------------------------
+                    # Step B: Compute tax impact of gifting via SIMULATED draw
+                    # ----------------------------------------------------------
+                    simulate_only = True
+                    #tax_sim_bal = copy.deepcopy(current_accounts)
+
+                    sim_result = self.withdrawal_engine._withdraw_from_hierarchy(
+                        cash_needed=target_gifting,
                         accounts_bal=tax_sim_bal,
-                        simulate_only=simulate_only
+                        simulate_only=True
                     )
-                    ordinary_income = res.get("ordinary_inc", 0.0)
-                    ltcg_income = res.get("ltcg_inc", 0.0)
 
-                    taxable_gifting = final_ordinary_income_actual + ordinary_income + ltcg_income
+                    ordinary_income = sim_result.get("ordinary_inc", 0.0)
+                    ltcg_income = sim_result.get("ltcg_inc", 0.0)
 
-                    # Use tax engine to get effective marginal rates for this income
-                    federal_rate, state_rate = get_effective_marginal_rates(
-                        year=current_year,
-                        income=taxable_gifting,
-                        filing_status=self.filing_status,
-                        state_of_residence=self.state_of_residence,
-                        age1=current_age_person1,
-                        age2=current_age_person2,
-                        inflation_index=current_inflation_index
-                    )
-                    total_rate = 1 + federal_rate + state_rate  # scale factor for reducing withdrawal
+                    # This is the AGI/MAGI AFTER gifting
+                    taxable_after_gifting = AGI_estimate + ordinary_income + ltcg_income
 
-                    # Optionally, define a target MAGI to limit gifting for IRMAA/fill purposes
-                    MAGI_limit = float('inf')  # replace with a specific target if needed
-                    if taxable_gifting > MAGI_limit:
-                        over = taxable_gifting - MAGI_limit
-                        proposed_gifting -= over / total_rate
+                    max_room = max(0.0, MAGI_limit -AGI_estimate) 
 
-                    # Round to nearest $1,000
-                    actual_gifting = max(0, math.ceil(proposed_gifting / 1000) * 1000)
+                    # ----------------------------------------------------------
+                    # Step D: Adjust gifting so it does NOT exceed tax/IRMAA room
+                    # ----------------------------------------------------------
+                    income_added = ordinary_income + ltcg_income
+
+                    if income_added > max_room:
+                        excess_income = income_added - max_room
+
+                        # Calculate the average percentage of the withdrawal that is taxable income.
+                        # We must be defensive against gifting being zero.
+                        if target_gifting > 0:
+                            avg_taxable_pct = income_added / target_gifting
+
+                            # Calculate the required reduction in the *withdrawal* amount to cut the 
+                            # *income* by the excess_income amount.
+                            if avg_taxable_pct > 0:
+                                reduction_in_gifting = excess_income / avg_taxable_pct
+                                adjusted_gifting = target_gifting - reduction_in_gifting
+                            else:
+                                # If no income was added (e.g., all from Roth/Basis), no adjustment needed
+                                adjusted_gifting = target_gifting
+                        else:
+                            # If gifting was 0, it stays 0
+                            adjusted_gifting = 0.0
+                    else:
+                        adjusted_gifting = target_gifting
+                        
+                    # ----------------------------------------------------------
+                    # Step E: Final rounding logic (consistent with Roth)
+                    # ----------------------------------------------------------
+                    if adjusted_gifting < 1000:
+                        actual_gifting = max(0.0, adjusted_gifting)
+                    else:
+                        actual_gifting = max(0.0, round(adjusted_gifting, -3))
+
                     self.gifting_paths[path_index, year_index] = actual_gifting
 
-                    # Execute withdrawal from portfolio
-                    simulate_only = False # doing actual portfolio draw
+                    # ----------------------------------------------------------
+                    # Step F: ACTUAL WITHDRAWAL EXECUTION
+                    # ----------------------------------------------------------
                     if actual_gifting > 0:
+                        simulate_only = False
                         withdrawal_result = self.withdrawal_engine._withdraw_from_hierarchy(
                             cash_needed=actual_gifting,
                             accounts_bal=current_accounts,
-                            simulate_only=simulate_only
+                            simulate_only=False
                         )
                         final_ordinary_income_actual += withdrawal_result.get("ordinary_inc", 0.0)
                         final_ltcg_income_actual += withdrawal_result.get("ltcg_inc", 0.0)
+
+                    actual_withdrawals += actual_gifting
+
+                # for plotting RMDs, Trust income and 457b income are displayed sperately so not included
+                self.portfolio_withdrawal_paths[path_index, year_index] = actual_withdrawals
 
                 # ---------------------------------------------------------------------
                 # 3) APPLY QUARTERLY RETURNS
@@ -686,37 +806,36 @@ class RetirementSimulator:
             #   - realized LTCG
             #   - ROTH conversions we added in Q4 above (as ordinary income)
 
-            final_MAGI = final_ordinary_income_actual + final_ltcg_income_actual + ss_benefit
-            self.magi_paths[path_index, year_index] = final_MAGI
-
-            total_taxes_final, federal_tax_final, medicare_irmaa_final = calculate_taxes(
+            AGI = final_ordinary_income_actual + final_ltcg_income_actual
+            state_tax_final, federal_tax_final, medicare_irmaa_final = calculate_taxes(
                 year=current_year,
                 inflation_index=current_inflation_index,
                 filing_status=self.filing_status,
                 state_of_residence=self.state_of_residence,
                 age1=current_age_person1,
                 age2=current_age_person2,
-                magi_two_years_ago=magi_path[year_index - 2],
-                AGI=final_ordinary_income_actual + final_ltcg_income_actual,
+                magi_two_years_ago=self.magi_paths[path_index, year_index - 2],
+                AGI=AGI,
                 taxable_ordinary=final_ordinary_income_actual,
                 lt_cap_gains=final_ltcg_income_actual,
                 qualified_dividends=0.0,
                 social_security_income=ss_benefit,
             )
+            total_taxes_final = state_tax_final + federal_tax_final
             self.taxes_paths[path_index, year_index] = total_taxes_final
             self.medicare_paths[path_index, year_index] = medicare_irmaa_final
+
+            #print(f"Year {current_year} FED {federal_tax_final:,.0f} VA {state_tax_final:,.0f}  AGI {AGI:,.0f} ORDINARY {final_ordinary_income_actual:,.0f} LTCG {final_ltcg_income_actual:,.0f}  SS {ss_benefit:,.0f} ")
+
+            ss_taxable = self.accounts_income.compute_taxable_ss(ss_benefit, AGI, self.inputs.filing_status)
+            MAGI =AGI + ss_taxable
+            self.magi_paths[path_index, year_index] = MAGI
 
             # Final Portfolio Balance
             self.portfolio_paths[path_index, year_index] = self._get_total_portfolio(current_accounts)
             
             # Save the final account state for the year
             self.account_paths[path_index][year_index] = copy.deepcopy(current_accounts)
-
-            self.travel_paths[path_index, year_index] = annual_travel_desired
-            self.gifting_paths[path_index, year_index] = annual_gifting_desired
-
-            # After all conversions, update the main accounts
-            current_accounts = conversion_accounts
 
     # =========================================================================
     # 3. UTILITY FUNCTIONS — Modular Wiring Only
@@ -787,8 +906,8 @@ class RetirementSimulator:
 
             acct['equity_pct'] = float(equity_pct)
             acct['bond_pct'] = float(1.0 - equity_pct)
-
-        # End _normalize_accounts
+            
+         # End _normalize_accounts
 
     def _get_total_portfolio(self, accounts: Dict) -> float:
         """Return total portfolio balance as sum of numeric balances (no magic pennies)."""
@@ -858,11 +977,12 @@ class RetirementSimulator:
             long_term_inflation_sigma=long_term_inflation_sigma,
         )
         cumulative = [1.0]
-        for y in range(self.num_years):
+        for y in range(self.n_full):
             q_rates = infl_q[0, y*4:(y+1)*4]
             ann_rate, _ = calculate_annual_inflation(q_rates, cumulative[-1])
-            cumulative.append(cumulative[-1] * (1 + ann_rate))
-        return cumulative[1:]  # drop year 0 = 1.0
+            if y > 2: #no inflation applied in prior 2 years or 1st year of simulation
+                cumulative.append(cumulative[-1] * (1 + ann_rate))
+        return cumulative
 
     def _calculate_annual_spending_needs(self, 
         current_year: int, 
@@ -871,8 +991,7 @@ class RetirementSimulator:
         Calculates total annual expenses (fixed and adjustable).
         
         Returns: 
-            (total_fixed_expenses, annual_base_spending, 
-             annual_lumpy_needs, annual_home_repair, 
+            (annual_base_spending, mortgage_expense, lumpy_needs,  
              annual_travel_desired, annual_gifting_desired)
         """
         
@@ -882,56 +1001,52 @@ class RetirementSimulator:
             car_cost_today, lumpy_expenses,
             home_repair_prob, home_repair_mean, home_repair_shape,
         )
+
+        #print(f"Morgage year {mortgage_payoff_year}  Mortgage {mortgage_monthly_until_payoff:,.2f}  T&I {property_tax_and_insurance:,.2f}")
         
         # 1. Base Spending (Inflation-Adjusted)
         annual_base_spending = self.base_annual_spending * inflation_index
         
-        # 2. Housing/Fixed Expenses (Mortgage is fixed, P&T is inflation-adjusted)
-        mortgage_expense = 0.0
+        monthly_mortgage = 0.0
         if current_year <= mortgage_payoff_year:
-            mortgage_expense = mortgage_monthly_until_payoff 
-            
-        property_and_tax = property_tax_and_insurance * inflation_index 
+            monthly_mortgage = mortgage_monthly_until_payoff             
+        taxes_and_insurance = property_tax_and_insurance * inflation_index
+        mortgage_expense = 12 * monthly_mortgage + taxes_and_insurance
+        
 
-        # 3. Lumpy Expenses (Check against configuration list)
-        annual_lumpy_needs = 0.0
+        # 2. Lumpy Expenses (Check against configuration list)
+        lumpy_needs = 0.0
         for item in lumpy_expenses:
             if item.get("year") == current_year:
-                annual_lumpy_needs += item.get("amount", 0.0) * inflation_index 
+                lumpy_needs += item.get("amount", 0.0) * inflation_index 
                 
-        # 4. Car Replacement (Every 'car_replacement_cycle' years, inflated)
+        # Car Replacement (Every 'car_replacement_cycle' years, inflated)
         car_expense = 0.0
-        years_since_start = current_year - self.current_year
+        years_since_start = current_year - self.current_year - 2 #offset so first car expense out 2 years
         if years_since_start % car_replacement_cycle == 0 and years_since_start >= 0:
             car_expense = car_cost_today * inflation_index
+        lumpy_needs += car_expense
             
-        # 5. Stochastic Home Repair (Restored Logic)
-        annual_home_repair = 0.0
+        # Stochastic Home Repair (Restored Logic)
+        home_repair = 0.0
         if self.rng.random() < home_repair_prob:
             # Draw from log-normal distribution (requires self.rng to be a seeded generator)
             mu_log = np.log(home_repair_mean) - (home_repair_shape ** 2) / 2
-            annual_home_repair = self.rng.lognormal(mu_log, home_repair_shape) * inflation_index
-        
-        # TOTAL FIXED EXPENSES (Required draw from portfolio/cash flow)
-        total_fixed_expenses = (
-            annual_base_spending +
-            mortgage_expense +
-            property_and_tax +
-            annual_lumpy_needs +
-            car_expense +
-            annual_home_repair
-        )
-        
+            home_repair = self.rng.lognormal(mu_log, home_repair_shape) * inflation_index
+        lumpy_needs += home_repair
+
+        #print(f"Home Repair {home_repair:,.2f}  Mortgage {mortgage_expense:,.2f}")
+
+
         # 6. Discretionary Spending (Dynamically Adjustable to manage tax/IRMAA)
         # These are the DESIRED amounts, which may be cut by the planner (Step 2/3)
         annual_travel_desired = self.travel * inflation_index
         annual_gifting_desired = self.gifting * inflation_index
         
         return (
-            total_fixed_expenses, 
-            annual_base_spending, 
-            annual_lumpy_needs, 
-            annual_home_repair,
+            annual_base_spending,
+            mortgage_expense,
+            lumpy_needs,
             annual_travel_desired, 
             annual_gifting_desired
         )
@@ -963,12 +1078,14 @@ class RetirementSimulator:
                 "ssbenefit_paths": np.array([]),
                 "portfolio_withdrawal_paths": np.array([]),
                 "rmd_paths": np.array([]),
+                "salary_paths": np.array([]),
                 "def457b_income_paths": np.array([]),
                 "pension_paths": np.array([]),
                 "medicare_paths": np.array([]),
                 "travel_paths": np.array([]),
                 "gifting_paths": np.array([]),
                 "base_spending_paths": np.array([]),
+                "mortgage_expense_paths": np.array([]),
                 "lumpy_spending_paths": np.array([]),
                 "plan_paths": np.array([]),
              }
@@ -1034,12 +1151,14 @@ class RetirementSimulator:
             "ssbenefit_paths": getattr(self, 'ssbenefit_paths', np.array([])),
             "portfolio_withdrawal_paths": getattr(self, 'portfolio_withdrawal_paths', np.array([])),
             "rmd_paths": getattr(self, 'rmd_paths', np.array([])),
+            "salary_paths": getattr(self, 'salary_paths', np.array([])),
             "def457b_income_paths": getattr(self, 'def457b_income_paths', np.array([])),
             "pension_paths": getattr(self, 'pension_paths', np.array([])),
             "medicare_paths": getattr(self, 'medicare_paths', np.array([])),
             "travel_paths": getattr(self, 'travel_paths', np.array([])),
             "gifting_paths": getattr(self, 'gifting_paths', np.array([])),
             "base_spending_paths": getattr(self, 'base_spending_paths', np.array([])),
+            "mortgage_expense_paths": getattr(self, 'mortgage_expense_paths', np.array([])),
             "lumpy_spending_paths": getattr(self, 'lumpy_spending_paths', np.array([])),
             "plan_paths": getattr(self, 'plan_paths', np.array([])),
         }

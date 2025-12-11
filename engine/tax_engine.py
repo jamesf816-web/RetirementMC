@@ -170,7 +170,7 @@ def _get_irmaa_surcharge(
 def calculate_taxes(
     year: int,
     inflation_index: float,
-    filing_status: TaxFilingStatus,
+    filing_status: str,
     state_of_residence: str, 
     age1: int,
     age2: int,
@@ -186,7 +186,7 @@ def calculate_taxes(
     Calculates all annual taxes (Federal, State) and Medicare premiums (IRMAA).
 
     Returns:
-        tuple[float, float, float]: (total_tax_owed, federal_tax, medicare_irmaa)
+        tuple[float, float, float]: (state_tax, federal_tax, medicare_irmaa)
     """
     
     # 1. Fetch ALL indexed Federal constants
@@ -245,11 +245,8 @@ def calculate_taxes(
         constants
     )
     medicare_irmaa = part_b_total + part_d_irmaa
-
-    # 6. Total Tax Owed
-    total_tax_owed = federal_tax + state_tax + medicare_irmaa
     
-    return total_tax_owed, federal_tax, medicare_irmaa
+    return state_tax, federal_tax, medicare_irmaa
 
 def get_effective_marginal_rates(
     year: int,

@@ -156,8 +156,8 @@ class AccountsIncomeEngine:
 
         # 4. Apply Trust Fund Failure Logic
         if current_year >= self.inputs.ss_fail_year:
-            # The benefit is reduced to (ss_fail_percent) of the original
-            ss_benefit_inflated *= self.inputs.ss_fail_percent
+            # The benefit is reduced to (1 - ss_fail_percent) of the original
+            ss_benefit_inflated *= (1 - self.inputs.ss_fail_percent)
 
         return ss_benefit_inflated
 
@@ -442,6 +442,60 @@ class AccountsIncomeEngine:
             amount2 = self.inputs.person2_pension_amount * 12 # need to convert monthly to annual
             if self.inputs.person2_pension_cola:
                 amount2 *= inflation_index
+
+        amount = amount1 + amount2
+        return amount
+
+    # ----------------------------------------------------------------------
+    # Pension 
+    # ----------------------------------------------------------------------
+    def compute_pension_income(self, year: int, inflation_index: float) -> float:
+        amount1 = 0.0
+        amount2 = 0.0
+        
+        age_p1 = self.ages_person1[year - self.inputs.current_year]
+        pension_age_1 = (self.inputs.person1_pension_age_years +
+                       self.inputs.person1_pension_age_months / 12)
+
+        if age_p1 >= pension_age_1:
+            amount1 = self.inputs.person1_pension_amount * 12 # need to convert monthly to annual
+            if self.inputs.person1_pension_cola:
+                amount1 *= inflation_index
+        
+        age_p2 = self.ages_person2[year - self.inputs.current_year]
+        pension_age_2 = (self.inputs.person2_pension_age_years +
+                       self.inputs.person2_pension_age_months / 12)
+
+        if age_p2 >= pension_age_2:
+            amount2 = self.inputs.person2_pension_amount * 12 # need to convert monthly to annual
+            if self.inputs.person2_pension_cola:
+                amount2 *= inflation_index
+
+        amount = amount1 + amount2
+        return amount
+
+    # ----------------------------------------------------------------------
+    # Salary
+    # ----------------------------------------------------------------------
+    def compute_salary_income(self, year: int, inflation_index: float) -> float:
+        amount1 = 0.0
+        amount2 = 0.0
+        
+        age_p1 = self.ages_person1[year - self.inputs.current_year]
+        retire_age_1 = (self.inputs.person1_ret_age_years +
+                       self.inputs.person1_ret_age_months / 12)
+
+        if age_p1 >= retire_age_1:
+            amount1 = self.inputs.person1_salary_amount * 12 # need to convert monthly to annual
+            amount1 *= inflation_index
+        
+        age_p2 = self.ages_person2[year - self.inputs.current_year]
+        retire_age_2 = (self.inputs.person2_ret_age_years +
+                       self.inputs.person2_ret_age_months / 12)
+
+        if age_p2 >= retire_age_2:
+            amount2 = self.inputs.person2_salary_amount * 12 # need to convert monthly to annual
+            amount2 *= inflation_index
 
         amount = amount1 + amount2
         return amount

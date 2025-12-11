@@ -126,6 +126,7 @@ def register_simulation_callbacks(app):
                 "travel": results.get("travel_paths", np.zeros((1,1))).tolist(),
                 "gifting": results.get("gifting_paths", np.zeros((1,1))).tolist(),
                 "base_spending": results.get("base_spending_paths", np.zeros((1,1))).tolist(),
+                "mortgage_expense": results.get("mortgage_expense_paths", np.zeros((1,1))).tolist(),
                 "lumpy": results.get("lumpy_spending_paths", np.zeros((1,1))).tolist(),
                 "rmds": results.get("rmd_paths", np.zeros((1,1))).tolist(),
                 "ssbenefit": results.get("ssbenefit_paths", np.zeros((1,1))).tolist(),
