@@ -365,30 +365,4 @@ def register_editor_callbacks(app):
         formatted_total = format_currency_output(total_balance, 0) # 0 decimal places
 
         return f"Total Portfolio Balance: {formatted_total}"
-    @callback(
-        Output('total-portfolio-balance', 'children'),
-        # This input triggers whenever the grid's rowData changes (edits, add, reset, upload)
-        Input('portfolio-grid', 'rowData'),
-        prevent_initial_call=True
-    )
-    def update_total_portfolio_balance(row_data):
-        if not row_data:
-            return "NO DATA *** Total Portfolio Balance: $0.00"
-
-        total_balance = 0.0
-        for row in row_data:
-            # The 'balance' value must be extracted and cleaned if necessary
-            # Assuming the 'balance' field is stored as a float/int:
-            try:
-                balance = clean_currency(row.get('balance', 0.0))
-                total_balance += balance
-            except (ValueError, TypeError):
-                # Handle cases where the input might not be a clean number yet
-                pass
-
-        # You should use a currency formatting utility here if you have one.
-        # Otherwise, simple formatting works:
-        formatted_total = format_currency_output(total_balance, 0) #second argument is decimal places
-
-        return f"Total Portfolio Balance: {formatted_total}"
-
+ 
