@@ -59,7 +59,6 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
     }
 
     colors = px.colors.qualitative.Vivid if color_theme == "Vivid" else px.colors.qualitative.Plotly
-    start_index = 2 # defauklt to skip 2 prior year
     for idx, (label, _) in enumerate(valid_trajectories):
         y = percentile_data[label][start_index:]  # skip to start_index
 
@@ -133,7 +132,6 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title, start_index, y
     # --------------------------------------------------
     # We have real data → plot it
     # --------------------------------------------------
-    start_index = 2 # defauklt to skip 2 prior year
     for label, data in valid_data.items():
         data_trimmed = data[:, start_index:] if data.shape[1] > 2 else data #this slices to start at start_index
         years = sim.years[start_index:] if len(sim.years) > 2 else sim.years #this slices to start at start_index
