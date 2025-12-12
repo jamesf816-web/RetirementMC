@@ -244,14 +244,14 @@ def generate_all_plots(results: dict, inputs, elapsed):
 
     # Stacked median charts
     all_figures["portfolio-median"] = create_stacked_figure(portfolio_trajectories, 50, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1, None)
-    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Plotly", 2, 1000000)
-    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Plotly", 2, 1000000)
+    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Plotly", 2, None)
+    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Plotly", 2, None)
 
     # Line charts
-    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)", 2, 1000000)
-    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)", 2, 500000)
-    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)", 2, 300000)
-    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)", 2)
+    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)", 2, None)
+    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)", 2, None)
+    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)", 2, None)
+    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)", 2, None)
 
     # Stacked 10% CL charts
     all_figures["portfolio-p10"]    = create_stacked_figure(portfolio_trajectories, 10, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1)
