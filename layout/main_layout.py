@@ -285,7 +285,7 @@ main_layout = html.Div(
 
             # Item 2C: Max Roth Conv
             html.Div(
-                pretty_currency_input('max_roth', value=160000, label="Max Roth Conv"),
+                pretty_currency_input('max_roth', value=150000, label="Max Roth Conv"),
                 style={'flex': '1', 'minWidth': '150px', 'textAlign': 'center'}
             ),
 
@@ -338,7 +338,7 @@ main_layout = html.Div(
                         {'label': 'Fill 35% bracket ($767k)', 'value': 'fill_35_percent'},
                         {'label': 'No conversions', 'value': 'none'},
                     ],
-                    value='fill_24_percent',
+                    value='fill_32_percent',
                     # Adjusted style to match height of input boxes (36px)
                     style={'fontSize': 16, 'height': '40px', 'lineHeight': '15px', 'textAlign': 'center'} 
                 )
