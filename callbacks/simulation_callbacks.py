@@ -62,7 +62,7 @@ def register_simulation_callbacks(app):
             return no_update
 
         results_to_store = None
-
+        
         start_time = time.time()
 
         try:
@@ -85,6 +85,7 @@ def register_simulation_callbacks(app):
             )
 
             sim = RetirementSimulator(inputs)   # ← fresh every time
+            
             results = sim.run_simulation()      # ← only called once per instance
             
             elapsed = time.time() - start_time
@@ -148,7 +149,7 @@ def register_simulation_callbacks(app):
             }
  
             # ----------------------------------------------------------------
-            # FINL RETURN
+            # FINAL RETURN
             # ----------------------------------------------------------------
  
             return success_header, *figure_list, debug_output, results_to_store

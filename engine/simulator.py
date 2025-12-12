@@ -209,7 +209,7 @@ class RetirementSimulator:
         
         if path_index % 100 == 0:
             print(f">>> STARTING PATH {path_index} <<<")
-        
+            
         # Initialize state for this path
         current_accounts = copy.deepcopy(self.initial_accounts)
 
