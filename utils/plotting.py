@@ -10,7 +10,7 @@ import callbacks.simulation_callbacks as sim
 # ------------------------------------------------------------------
 # HELPER: Stacked area charts (Portfolio, Income, Spending)
 # ------------------------------------------------------------------
-def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_theme, start_index, y_max=None):
+def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_theme, start_index, y_step=None, y_max=None):
     """
     Super-robust version – handles None, empty lists, zero-sim arrays, etc.
     """
@@ -78,7 +78,7 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
         title=title + suffix,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
-        yaxis=dict(range=[0, y_max]),
+        yaxis=dict(range=[0, y_max], dtick=y_step),
         template="plotly_white",
         hovermode="x unified",
         height=500,
@@ -89,7 +89,7 @@ def create_stacked_figure(trajectories, percentile, title, yaxis_title, color_th
 
 # ------------------------------------------------------------------
 # HELPER: Regular multi-line charts (MAGI, Travel/Gifting, etc.)
-def create_multi_line_plot(trajectories_dict, title, yaxis_title, start_index, y_max=None):
+def create_multi_line_plot(trajectories_dict, title, yaxis_title, start_index, y_step=None, y_max=None):
     """
     Plots median + 10th/90th percentiles.
     Now 100% safe against None, empty arrays, or zero simulations.
@@ -159,7 +159,7 @@ def create_multi_line_plot(trajectories_dict, title, yaxis_title, start_index, y
         title=title,
         xaxis_title="Year",
         yaxis_title=yaxis_title,
-        yaxis=dict(range=[0, y_max]),
+        yaxis=dict(range=[0, y_max], dtick=y_step),
         template="plotly_white",
         hovermode="x unified",
         height=400,
@@ -243,15 +243,15 @@ def generate_all_plots(results: dict, inputs, elapsed):
     all_figures = {}
 
     # Stacked median charts
-    all_figures["portfolio-median"] = create_stacked_figure(portfolio_trajectories, 50, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1, None)
-    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Plotly", 2, None)
-    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Plotly", 2, None)
+    all_figures["portfolio-median"] = create_stacked_figure(portfolio_trajectories, 50, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1, 2e6, None)
+    all_figures["income-median"] = create_stacked_figure(income_trajectories, 50, "Income Sources", "Annual Income ($)", "Plotly", 2, 1e5, None)
+    all_figures["spending-median"] = create_stacked_figure(spending_trajectories, 50, "Spending Categories", "Annual Spending ($)", "Plotly", 2, 1e5, None)
 
     # Line charts
-    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)", 2, None)
-    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)", 2, None)
-    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)", 2, None)
-    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)", 2, None)
+    all_figures["magi"]            = create_multi_line_plot({"MAGI": magi}, "Modified Adjusted Gross Income (MAGI)", "MAGI ($)", 2, 0.5e5,6e5)
+    all_figures["travel-gifting"]  = create_multi_line_plot({"Travel": travel, "Gifting": gifting}, "Travel & Gifting Spending", "Annual Amount ($)", 2, 25e3, None)
+    all_figures["roth-conversions"] = create_multi_line_plot({"Roth Conversions": conversion}, "Roth Conversions", "Annual Conversion ($)", 2, 25e3, 200e3)
+    all_figures["medicare-costs"]  = create_multi_line_plot({"Medicare/IRMA Costs": medicare}, "Medicare Premiums (incl. IRMAA)", "Annual Cost ($)", 2, 2e3, None)
 
     # Stacked 10% CL charts
     all_figures["portfolio-p10"]    = create_stacked_figure(portfolio_trajectories, 10, "Portfolio by Tax Type", "Portfolio Balance ($)", "Vivid", 1)

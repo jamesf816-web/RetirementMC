@@ -1,6 +1,7 @@
 import dash
 from dash import Input, Output, State, callback, no_update, ctx
 from dash.exceptions import PreventUpdate
+from dash import dcc
 
 # Import the specific utility functions needed
 from utils.xml_loader import parse_portfolio_xml
@@ -43,9 +44,7 @@ def register_editor_callbacks(app):
     # ----------------------------------------------------------------------
 
     @app.callback(
-        # FIX: The store is targeted by multiple callbacks, requires allow_duplicate=True
         Output('portfolio-store', 'data', allow_duplicate=True),
-        # FIX: Status is also targeted by multiple, requires allow_duplicate=True
         Output('portfolio-status', 'children', allow_duplicate=True),
         Output('portfolio-grid', 'rowData', allow_duplicate=True),
         Input('upload-data', 'contents'),
@@ -298,9 +297,11 @@ def register_editor_callbacks(app):
         Output("download-xml-portfolio", "data"),
         Input("save-portfolio-btn", "n_clicks"),
         State('portfolio-grid', 'rowData'),
+        State('save-filename-input', 'value'),
+        State('upload-data', 'filename'),
         prevent_initial_call=True
     )
-    def save_portfolio_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]]):
+    def save_portfolio_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]], custom_filename, current_filename):
         """Converts the current AG Grid data into an XML string and triggers a file download."""
         if n_clicks and grid_data:
             # 1. Convert the list of row data (from AG Grid) back into the dictionary
@@ -320,10 +321,15 @@ def register_editor_callbacks(app):
             # 2. Generate the XML content string
             xml_content = create_portfolio_xml(portfolio_dict)
 
-            # 3. Use dcc.send_data_string to prompt a file download
-            return dcc.send_data_string(
+            # Determine final filename
+            filename = (custom_filename or current_filename or "my_retirement_portfolio.xml").strip()
+            if not filename.lower().endswith('.xml'):
+                filename += ".xml"
+
+            # 3. Use dcc.send_data_frame to prompt a file download
+            return dcc.send_data_frame(
                 xml_content,
-                filename="my_retirement_portfolio.xml",
+                filename=filename,
                 type="text/xml" # Set correct MIME type
             )
 
@@ -332,7 +338,6 @@ def register_editor_callbacks(app):
     # ----------------------------------------------------------------------
     # 8. Get total portfolio value dynamically to displauy while editing
     # ----------------------------------------------------------------------
-
     @app.callback(
         Output('total-portfolio-balance', 'children'),
         # 1. Triggers for Reset, Upload, and Add Account (when rowData is set)
@@ -366,3 +371,36 @@ def register_editor_callbacks(app):
 
         return f"Total Portfolio Balance: {formatted_total}"
  
+    # ----------------------------------------------------------------------
+    # 9. Get current portfolio XML file name for save-to function default
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('save-filename-input', 'value'),
+        Input('upload-data', 'filename'),
+        prevent_initial_call=True
+    )
+    def update_save_filename_on_load(filename):
+        """When user loads an XML, pre-fill the save filename box with the same name"""
+        if filename:
+            return filename
+    return "my_retirement_portfolio.xml"
+
+    # ----------------------------------------------------------------------
+    # 10. Delete portfolio row
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('portfolio-grid', 'rowData', allow_duplicate=True),
+        Input('delete-selected-btn', 'n_clicks'),
+        State('portfolio-grid', 'selectedRows'),
+        State('portfolio-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def delete_selected_rows(n_clicks, selected_rows, current_rows):
+        if not n_clicks or not selected_rows:
+            raise PreventUpdate
+
+        # Use 'name' as unique key (assuming names are unique)
+        selected_names = [row['name'] for row in selected_rows]
+        rows_to_keep = [row for row in current_rows if row['name'] not in selected_names]
+
+        return rows_to_keep

@@ -163,13 +163,30 @@ main_layout = html.Div(
                                 }
                             ),
 
+                           # 2b. Save-As functionality
+                            html.Span("Save as: ", style={'margin': '0 10px', 'fontWeight': 'bold'}),
+                            dcc.Input(
+                                id='save-filename-input',
+                                type='text',
+                                placeholder='my_portfolio.xml',
+                                value='default_portfolio.xml',  # Will be filled automatically if a new file is uploaded
+                                style={
+                                    'width': '200px',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc',
+                                    'fontSize': '14px',
+                                    'marginRight': '20px'
+                                }
+                            ),
+
                             # 3. Add New Account
                             html.Button("Add New Account", id="add-account-btn", n_clicks=0,
                                          style={'marginRight': '10px', 'backgroundColor': '#27ae60', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
-
+                            
                             # 4. Reset to Defaults
                             html.Button("Reset to Defaults", id="reset-portfolio-btn", n_clicks=0,
-                                         style={'backgroundColor': '#e74c3c', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+                                         style={'backgroundColor': 'blue', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
 
                             # 5. Total Portfolio Balance Display
                             html.Div(
@@ -187,8 +204,12 @@ main_layout = html.Div(
                             ),
 
                             # 6. Portfolio Status Div
-                            html.Div(id="portfolio-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'})
+                            html.Div(id="portfolio-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'}),
 
+                            # 7. Delete Account
+                            html.Button("Delete Account", id="delete-selected-btn", n_clicks=0,
+                                        style={'backgroundColor': 'red', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+                                 
                         ], style={'marginBottom': '15px', 'display': 'flex', 'alignItems': 'center'}),
 
 
@@ -196,19 +217,20 @@ main_layout = html.Div(
                         dag.AgGrid(
                             id='portfolio-grid',
                             columnDefs=[
-                                {"field": "name", "headerName": "Account Name", "editable": False, "pinned": "left", "width": 180},
+                                {"field": "name", "headerName": "Account Name", "editable": True, "pinned": "left", "width": 180},
                                 {"field": "balance", "headerName": "Balance ($)", "type": "rightAligned",
                                  "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
-                                 "editable": True},
+                                 "editable": True},                                
                                 {"field": "equity", "headerName": "Equity %",
                                  "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
-                                 "editable": True},
+                                 "editable": True},                                
                                 {"field": "bond", "headerName": "Bond %",
                                  "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
-                                 "editable": True},
+                                 "editable": True},                                
                                 {"field": "tax", "headerName": "Tax Type", "cellEditor": "agSelectCellEditor",
-                                 "cellEditorParams": {"values": ["taxable", "traditional", "roth", "inherited", "trust"]}, "width": 130},
-                                {"field": "owner", "headerName": "Owner", "cellEditor": "agSelectCellEditor",
+                                 "cellEditorParams": {"values": ["taxable", "traditional", "roth", "inherited", "trust"]}, "width": 130,
+                                "editable": True},                          
+                                {"field": "owner", "headerName": "Owner", "cellEditor": "agSelectCellEditor", "editable": True,    
                                  "cellEditorParams": {"values": ["person1", "person2"]}, "width": 110},
                                 {"field": "basis", "headerName": "Basis ($)",
                                  "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
@@ -216,18 +238,17 @@ main_layout = html.Div(
                                 {"field": "income", "headerName": "Mand. Yield", "editable": True, "width": 110},
                                 {"field": "rmd_factor_table", "headerName": "RMD Table", "editable": True, "width": 130},
                                 {
-                                    "headerName": "Delete", # Corrected from 'Headername'
-                                    "field": "delete",
+                                    "headerName": "Select to Delete",
                                     "checkboxSelection": True,
+                                    "headerCheckboxSelection": True,
                                     "width": 90,
                                     "pinned": "right",
                                     "sortable": False,
-                                    "filter": False,
-                                    "headerCheckboxSelection": True,
-                                    "headerCheckboxSelectionFilteredOnly": True,
-                                },
+                                    "filter": False
+                                },                              
+
                             ],
-                            rowData=[{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()],
+                            rowData=[{**v, "name": k, "delete": False} for k, v in DEFAULT_ACCOUNTS.items()],
                             defaultColDef={
                                 "flex": 1,
                                 "minWidth": 100,
@@ -236,9 +257,10 @@ main_layout = html.Div(
                                 "filter": True,
                                 "floatingFilter": True
                             },
-                            dashGridOptions={"rowHeight": 48, "animateRows": False},
+                            dashGridOptions={"rowHeight": 48, "animateRows": False, "onCellValueChanged": {"function": "console.log('changed')"}},
                             style={"height": 550, "minWidth": 1200},
                             className="ag-theme-alpine",
+                            
                         )
                     ] 
                 )

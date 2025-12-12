@@ -1,3 +1,6 @@
+# app.py
+import multiprocessing as mp
+import numpy as np
 import dash
 from dash import Dash
 # If you are using Dash 2.0+, these imports are cleaner:
