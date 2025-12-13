@@ -17,6 +17,7 @@ import json
 from typing import Dict, Any, List
 
 DEFAULT_PORTFOLIO_XML_PATH = 'config/default_portfolio.xml'
+DEFAULT_EXPENSES_XML_PATH = 'config/default_expenses.xml'
 
 # --- Data Loader Helper Function ---
 def get_default_portfolio_data() -> Dict[str, Dict]:
@@ -36,11 +37,64 @@ def get_default_portfolio_data() -> Dict[str, Dict]:
             "Taxable_Brokerage": {"balance": 150000, "equity": 0.90, "bond": 0.10, "tax": "taxable", "owner": "person1", "basis": 150000},
         }
 
+def get_default_expenses_data() -> Dict[str, Dict]:
+    """
+    Loads the default account data from the XML file using the utility.
+    Includes a fallback in case the XML file is not found.
+    """
+    try:
+        # Use the imported utility function with the defined file path
+        return parse_portfolio_xml(DEFAULT_EXPENSES_XML_PATH)
+    except FileNotFoundError:
+        print(f"ERROR: Default portfolio XML file not found at {DEFAULT_EXPENSES_XML_PATH}. Returning fallback data.")
+        # Fallback to a hardcoded structure (matching the mock data) if the file is missing/inaccessible
+        return {
+            "Base Annual": {"cost": 5000, "type": "refgular", "period": 1, "inflate": "Yes"},
+        }
 
 def register_editor_callbacks(app):
 
     # ----------------------------------------------------------------------
-    # 1. Portfolio Grid / Data Store Callbacks (Load, Reset, Update)
+    # Setup Data Store Update
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output("setup-store", "data"),
+        Input("setup-grid", "rowData"),
+        # IMPROVEMENT: Prevent initial call to avoid firing on app load
+        prevent_initial_call=True
+    )
+    def update_setup_store(rows: List[Dict[str, Any]]):
+        """
+        Updates the dcc.Store for setup data whenever the setup AG Grid is edited.
+        Assumes 'rows' is the list of dictionaries directly from the grid.
+        """
+        if rows is None:
+            raise PreventUpdate
+        # Since setup data is simple, returning rows might be fine, but converting 
+        # to a dict based on a key (if applicable) is often cleaner. Assuming list-of-dicts is required.
+        return rows
+    
+    # ----------------------------------------------------------------------
+    # UI Transition Callback: Hides setup, reveals main dashboard
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('initial-setup-container', 'style'),
+        Output('main-planning-ui', 'style'),
+        Input('confirm-setup-btn', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def handle_setup_confirmation(n_clicks: int):
+        """Hides the initial setup screen and displays the main planning UI upon button click."""
+        if not n_clicks:
+            raise PreventUpdate
+        
+        hide_style = {'display': 'none'}
+        show_style = {'display': 'block'}
+        
+        return hide_style, show_style
+
+    # ----------------------------------------------------------------------
+    # Portfolio Grid / Data Store Callbacks (Load, Reset, Update)
     # ----------------------------------------------------------------------
 
     @app.callback(
@@ -98,27 +152,7 @@ def register_editor_callbacks(app):
         raise PreventUpdate
 
     # ----------------------------------------------------------------------
-    # 2. Setup Data Store Update
-    # ----------------------------------------------------------------------
-    @app.callback(
-        Output("setup-store", "data"),
-        Input("setup-grid", "rowData"),
-        # IMPROVEMENT: Prevent initial call to avoid firing on app load
-        prevent_initial_call=True
-    )
-    def update_setup_store(rows: List[Dict[str, Any]]):
-        """
-        Updates the dcc.Store for setup data whenever the setup AG Grid is edited.
-        Assumes 'rows' is the list of dictionaries directly from the grid.
-        """
-        if rows is None:
-            raise PreventUpdate
-        # Since setup data is simple, returning rows might be fine, but converting 
-        # to a dict based on a key (if applicable) is often cleaner. Assuming list-of-dicts is required.
-        return rows
-    
-    # ----------------------------------------------------------------------
-    # 3. Add New Account
+    # Add New Portfolio Account
     # ----------------------------------------------------------------------
 
     @app.callback(
@@ -153,7 +187,7 @@ def register_editor_callbacks(app):
         return current_rows + [new_row]
 
     # ----------------------------------------------------------------------
-    # 4. UI Collapse Toggles
+    # Portfolio UI Collapse Toggles
     # ----------------------------------------------------------------------
 
     @app.callback(
@@ -195,23 +229,369 @@ def register_editor_callbacks(app):
             return {"display": "block"}, "Setup Editor – Click to Close"
 
     # ----------------------------------------------------------------------
-    # 5. UI Transition Callback: Hides setup, reveals main dashboard
+    # Portfolio Save to XML (Download)
     # ----------------------------------------------------------------------
     @app.callback(
-        Output('initial-setup-container', 'style'),
-        Output('main-planning-ui', 'style'),
-        Input('confirm-setup-btn', 'n_clicks'),
+        Output("download-xml-portfolio", "data"),
+        Input("save-portfolio-btn", "n_clicks"),
+        State('portfolio-grid', 'rowData'),
+        State('save-filename-input', 'value'),
+        State('upload-data', 'filename'),
         prevent_initial_call=True
     )
-    def handle_setup_confirmation(n_clicks: int):
-        """Hides the initial setup screen and displays the main planning UI upon button click."""
-        if not n_clicks:
+    def save_portfolio_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]], custom_filename, current_filename):
+        """Converts the current AG Grid data into an XML string and triggers a file download."""
+        if n_clicks and grid_data:
+            # 1. Convert the list of row data (from AG Grid) back into the dictionary
+            # structure expected by the XML writer.
+            portfolio_dict = {}
+            for row in grid_data:
+                # Create a copy of the row so we can safely mutate it (pop 'name', 'delete')
+                row_copy = row.copy()
+                account_name = row_copy.pop('name') # Get the name which is the dict key
+                row_copy.pop('delete', None)       # Remove the ephemeral 'delete' column
+                
+                # Clean up None values which can cause issues with XML writing
+                cleaned_row = {k: v for k, v in row_copy.items() if v is not None}
+                
+                portfolio_dict[account_name] = cleaned_row
+
+            # 2. Generate the XML content string
+            xml_content = create_portfolio_xml(portfolio_dict)
+
+            # Determine final filename
+            filename = (custom_filename or current_filename or "my_retirement_portfolio.xml").strip()
+            if not filename.lower().endswith('.xml'):
+                filename += ".xml"
+
+            # 3. Use dcc.send_data_frame to prompt a file download
+            return dcc.send_data_frame(
+                xml_content,
+                filename=filename,
+                type="text/xml" # Set correct MIME type
+            )
+
+        raise PreventUpdate
+
+    # ----------------------------------------------------------------------
+    # Get total portfolio value dynamically to displauy while editing
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('total-portfolio-balance', 'children'),
+        # 1. Triggers for Reset, Upload, and Add Account (when rowData is set)
+        Input('portfolio-grid', 'rowData'), 
+        # 2. Triggers for manual user edits to a cell
+        Input('portfolio-grid', 'cellValueChanged'),
+        prevent_initial_call=True
+    )
+    def update_total_portfolio_balance(row_data, cell_value_change):
+        # When either Input fires, 'row_data' contains the current state of the grid.
+        
+        # Check if the data is valid before proceeding
+        if not row_data:
+            # When using multiple Inputs, you should typically use dash.no_update 
+            # or raise PreventUpdate if you don't want to change the output.
+            # Returning a string works fine if the initial placeholder is set.
+            return "NO DATA *** Total Portfolio Balance: $0.00"
+
+        total_balance = 0.0
+        for row in row_data:
+            try:
+                # The balance column in the grid may still contain a string, so clean_currency is essential here.
+                balance = clean_currency(row.get('balance', 0.0))
+                total_balance += balance
+            except (ValueError, TypeError):
+                # Safely ignore rows with non-numeric or malformed balances
+                pass
+
+        # Use the imported utility to format the output string
+        formatted_total = format_currency_output(total_balance, 0) # 0 decimal places
+
+        return f"Total Portfolio Balance: {formatted_total}"
+ 
+    # ----------------------------------------------------------------------
+    # Get current portfolio XML file name for save-to function default
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('save-filename-input', 'value'),
+        Input('upload-data', 'filename'),
+        prevent_initial_call=True
+    )
+    def update_save_filename_on_load(filename):
+        """When user loads an XML, pre-fill the save filename box with the same name"""
+        if filename:
+            return filename
+    return "my_retirement_portfolio.xml"
+
+    # ----------------------------------------------------------------------
+    # Delete portfolio row
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('portfolio-grid', 'rowData', allow_duplicate=True),
+        Input('delete-selected-btn', 'n_clicks'),
+        State('portfolio-grid', 'selectedRows'),
+        State('portfolio-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def delete_selected_rows(n_clicks, selected_rows, current_rows):
+        if not n_clicks or not selected_rows:
             raise PreventUpdate
+
+        # Use 'name' as unique key (assuming names are unique)
+        selected_names = [row['name'] for row in selected_rows]
+        rows_to_keep = [row for row in current_rows if row['name'] not in selected_names]
+
+        return rows_to_keep
+    # ----------------------------------------------------------------------
+    # Expenses Grid / Data Store Callbacks (Load, Reset, Update)
+    # ----------------------------------------------------------------------
+
+    @app.callback(
+        Output('expenses-store', 'data', allow_duplicate=True),
+        Output('expenses-status', 'children', allow_duplicate=True),
+        Output('expenses-grid', 'rowData', allow_duplicate=True),
+        Input('upload-data', 'contents'),
+        Input("reset-expenses-btn", "n_clicks"),
+        State('upload-data', 'filename'),
+        prevent_initial_call=True
+    )
+    def update_expenses_data_and_grid(contents, n_clicks_reset, filename):
+        """
+        Handles two triggers: File Upload and Reset to Defaults.
+        Updates the expenses data store, the AG Grid rowData, and the status message.
+        """
+        trigger_id = ctx.triggered_id if ctx.triggered else None
+
+        # --- Trigger 1: Reset to Defaults Button ---
+        if trigger_id == "reset-expenses-btn" and n_clicks_reset:
+            DEFAULT_ACCOUNTS = get_default_expenses_data()
+            grid_data = [{**v, "name": k} for k, v in DEFAULT_ACCOUNTS.items()]
+            status = "Expenses reset to default configuration."
+            
+            # Return store data, status, and grid data
+            return DEFAULT_ACCOUNTS, status, grid_data
         
-        hide_style = {'display': 'none'}
-        show_style = {'display': 'block'}
+        # --- Trigger 2: File Upload ---
+        elif trigger_id == 'upload-data' and contents is not None:
+            try:
+                # 1. Decode the content string
+                content_type, content_string = contents.split(',')
+                decoded = base64.b64decode(content_string)
+
+                # 2. Use a file-like object to pass the content to your parser
+                xml_data_bytes = io.BytesIO(decoded)
+                
+                # 3. Call your parser function
+                new_expenses_data = parse_xml_content_to_dict(xml_data_bytes)
+                
+                # 4. Prepare grid data
+                grid_data = [{**v, "name": k} for k, v in new_expenses_data.items()]
+
+                status = f"Successfully loaded: {filename}"
+                # Return store data, status, and grid data
+                return new_expenses_data, status, grid_data
+
+            except Exception as e:
+                print(f"Error processing XML file: {e}")
+                status = f"Error loading file: {filename}. Please check file format or log for details."
+                # On error, prevent update to keep existing data
+                raise PreventUpdate
+
+        # Prevent update for any other reason
+        raise PreventUpdate
+
+    # ----------------------------------------------------------------------
+    # Add New Expenses Account
+    # ----------------------------------------------------------------------
+
+    @app.callback(
+        # The grid rowData is updated by multiple callbacks (reset, upload, add), requires allow_duplicate
+        Output('expenses-grid', 'rowData', allow_duplicate=True),
+        Input('add-account-btn', 'n_clicks'),
+        State('expenses-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def add_account(n_clicks: int, current_rows: List[Dict[str, Any]]):
+        """Adds a blank, default account row to the expenses AG Grid."""
+        if not n_clicks: # Check if n_clicks is None or 0
+            raise PreventUpdate
+            
+        if not current_rows:
+            current_rows = []
+            
+        new_name = f"New_Account_{len(current_rows)+1}"
+        new_row = {
+            "name": new_name,
+            "balance": 100000,
+            "equity": 0.70,
+            "bond": 0.30,
+            "tax": "traditional",
+            "owner": "person1",
+            "basis": None,
+            "income": None,
+            "death_year": None,
+            "death_month": None,
+            "decedent_started_rmds": None
+        }
+        return current_rows + [new_row]
+
+    # ----------------------------------------------------------------------
+    # Expenses UI Collapse Toggles
+    # ----------------------------------------------------------------------
+
+    @app.callback(
+        Output("expenses-collapse-content", "style"),
+        Output("expenses-collapse-button", "children"),
+        Input("expenses-collapse-button", "n_clicks"),
+        State("expenses-collapse-content", "style"),
+    )
+    def toggle_expenses_collapse(n_clicks, current_style):
+        """Toggles the visibility and button text of the Expenses Editor panel."""
+        if not ctx.triggered or ctx.triggered_id != "expenses-collapse-button":
+            # IMPROVEMENT: Use no_update instead of raising PreventUpdate when not triggered
+            return no_update, no_update
+
+        # Check the current display style to determine if we should open or close
+        if current_style and current_style.get("display") == "block":
+            # Currently open, so close it
+            return {"display": "none"}, "Expenses Editor – Click to Open"
+        else:
+            # Currently closed (or first click), so open it
+            return {"display": "block"}, "Expenses Editor – Click to Close"
+
+    @app.callback(
+        Output("setup-collapse-content", "style"),
+        Output("setup-collapse-button", "children"),
+        Input("setup-collapse-button", "n_clicks"),
+        State("setup-collapse-content", "style"),
+        prevent_initial_call=True
+    )
+    def toggle_setup_collapse(n_clicks, current_style):
+        """Toggles the visibility and button text of the Setup Editor panel."""
+        # IMPROVEMENT: Use ctx.triggered_id check for robustness
+        if not ctx.triggered or ctx.triggered_id != "setup-collapse-button":
+            return no_update, no_update
+            
+        if current_style and current_style.get("display") == "block":
+            return {"display": "none"}, "Setup Editor – Click to Open"
+        else:
+            return {"display": "block"}, "Setup Editor – Click to Close"
+
+    # ----------------------------------------------------------------------
+    # Expenses Save to XML (Download)
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output("download-xml-expenses", "data"),
+        Input("save-expenses-btn", "n_clicks"),
+        State('expenses-grid', 'rowData'),
+        State('save-filename-input', 'value'),
+        State('upload-data', 'filename'),
+        prevent_initial_call=True
+    )
+    def save_expenses_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]], custom_filename, current_filename):
+        """Converts the current AG Grid data into an XML string and triggers a file download."""
+        if n_clicks and grid_data:
+            # 1. Convert the list of row data (from AG Grid) back into the dictionary
+            # structure expected by the XML writer.
+            expenses_dict = {}
+            for row in grid_data:
+                # Create a copy of the row so we can safely mutate it (pop 'name', 'delete')
+                row_copy = row.copy()
+                account_name = row_copy.pop('name') # Get the name which is the dict key
+                row_copy.pop('delete', None)       # Remove the ephemeral 'delete' column
+                
+                # Clean up None values which can cause issues with XML writing
+                cleaned_row = {k: v for k, v in row_copy.items() if v is not None}
+                
+                expenses_dict[account_name] = cleaned_row
+
+            # 2. Generate the XML content string
+            xml_content = create_expenses_xml(expenses_dict)
+
+            # Determine final filename
+            filename = (custom_filename or current_filename or "my_retirement_expenses.xml").strip()
+            if not filename.lower().endswith('.xml'):
+                filename += ".xml"
+
+            # 3. Use dcc.send_data_frame to prompt a file download
+            return dcc.send_data_frame(
+                xml_content,
+                filename=filename,
+                type="text/xml" # Set correct MIME type
+            )
+
+        raise PreventUpdate
+
+    # ----------------------------------------------------------------------
+    # Get total expenses value dynamically to displauy while editing
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('total-expenses-balance', 'children'),
+        # 1. Triggers for Reset, Upload, and Add Account (when rowData is set)
+        Input('expenses-grid', 'rowData'), 
+        # 2. Triggers for manual user edits to a cell
+        Input('expenses-grid', 'cellValueChanged'),
+        prevent_initial_call=True
+    )
+    def update_total_expenses_balance(row_data, cell_value_change):
+        # When either Input fires, 'row_data' contains the current state of the grid.
         
-        return hide_style, show_style
+        # Check if the data is valid before proceeding
+        if not row_data:
+            # When using multiple Inputs, you should typically use dash.no_update 
+            # or raise PreventUpdate if you don't want to change the output.
+            # Returning a string works fine if the initial placeholder is set.
+            return "NO DATA *** Total Expenses Balance: $0.00"
+
+        total_expenses = 0.0
+        for row in row_data:
+            try:
+                # The balance column in the grid may still contain a string, so clean_currency is essential here.
+                cost = clean_currency(row.get('cost', 0.0))
+                period = float(row.get('period', 1.0))
+                total_expenses += cost * (12 / period)
+            except (ValueError, TypeError):
+                # Safely ignore rows with non-numeric or malformed costs or periods
+                pass
+
+        # Use the imported utility to format the output string
+        formatted_total = format_currency_output(total_excpenses, 0) # 0 decimal places
+
+        return f"Total Annualized Expenses: {formatted_total}"
+ 
+    # ----------------------------------------------------------------------
+    # Get current expenses XML file name for save-to function default
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('save-filename-input', 'value'),
+        Input('upload-data', 'filename'),
+        prevent_initial_call=True
+    )
+    def update_save_filename_on_load(filename):
+        """When user loads an XML, pre-fill the save filename box with the same name"""
+        if filename:
+            return filename
+    return "my_retirement_expenses.xml"
+
+    # ----------------------------------------------------------------------
+    # Delete expenses row
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output('expenses-grid', 'rowData', allow_duplicate=True),
+        Input('delete-selected-btn', 'n_clicks'),
+        State('expenses-grid', 'selectedRows'),
+        State('expenses-grid', 'rowData'),
+        prevent_initial_call=True
+    )
+    def delete_selected_rows(n_clicks, selected_rows, current_rows):
+        if not n_clicks or not selected_rows:
+            raise PreventUpdate
+
+        # Use 'name' as unique key (assuming names are unique)
+        selected_names = [row['name'] for row in selected_rows]
+        rows_to_keep = [row for row in current_rows if row['name'] not in selected_names]
+
+        return rows_to_keep
 
     # ======================================================================
     # CURRENCY FORMATTING CALLBACKS (Handles immediate UI reformatting)
@@ -290,117 +670,3 @@ def register_editor_callbacks(app):
 
         return formatted_values
     
-    # ----------------------------------------------------------------------
-    # 7. Save to XML (Download)
-    # ----------------------------------------------------------------------
-    @app.callback(
-        Output("download-xml-portfolio", "data"),
-        Input("save-portfolio-btn", "n_clicks"),
-        State('portfolio-grid', 'rowData'),
-        State('save-filename-input', 'value'),
-        State('upload-data', 'filename'),
-        prevent_initial_call=True
-    )
-    def save_portfolio_to_xml(n_clicks: int, grid_data: List[Dict[str, Any]], custom_filename, current_filename):
-        """Converts the current AG Grid data into an XML string and triggers a file download."""
-        if n_clicks and grid_data:
-            # 1. Convert the list of row data (from AG Grid) back into the dictionary
-            # structure expected by the XML writer.
-            portfolio_dict = {}
-            for row in grid_data:
-                # Create a copy of the row so we can safely mutate it (pop 'name', 'delete')
-                row_copy = row.copy()
-                account_name = row_copy.pop('name') # Get the name which is the dict key
-                row_copy.pop('delete', None)       # Remove the ephemeral 'delete' column
-                
-                # Clean up None values which can cause issues with XML writing
-                cleaned_row = {k: v for k, v in row_copy.items() if v is not None}
-                
-                portfolio_dict[account_name] = cleaned_row
-
-            # 2. Generate the XML content string
-            xml_content = create_portfolio_xml(portfolio_dict)
-
-            # Determine final filename
-            filename = (custom_filename or current_filename or "my_retirement_portfolio.xml").strip()
-            if not filename.lower().endswith('.xml'):
-                filename += ".xml"
-
-            # 3. Use dcc.send_data_frame to prompt a file download
-            return dcc.send_data_frame(
-                xml_content,
-                filename=filename,
-                type="text/xml" # Set correct MIME type
-            )
-
-        raise PreventUpdate
-
-    # ----------------------------------------------------------------------
-    # 8. Get total portfolio value dynamically to displauy while editing
-    # ----------------------------------------------------------------------
-    @app.callback(
-        Output('total-portfolio-balance', 'children'),
-        # 1. Triggers for Reset, Upload, and Add Account (when rowData is set)
-        Input('portfolio-grid', 'rowData'), 
-        # 2. Triggers for manual user edits to a cell
-        Input('portfolio-grid', 'cellValueChanged'),
-        prevent_initial_call=True
-    )
-    def update_total_portfolio_balance(row_data, cell_value_change):
-        # When either Input fires, 'row_data' contains the current state of the grid.
-        
-        # Check if the data is valid before proceeding
-        if not row_data:
-            # When using multiple Inputs, you should typically use dash.no_update 
-            # or raise PreventUpdate if you don't want to change the output.
-            # Returning a string works fine if the initial placeholder is set.
-            return "NO DATA *** Total Portfolio Balance: $0.00"
-
-        total_balance = 0.0
-        for row in row_data:
-            try:
-                # The balance column in the grid may still contain a string, so clean_currency is essential here.
-                balance = clean_currency(row.get('balance', 0.0))
-                total_balance += balance
-            except (ValueError, TypeError):
-                # Safely ignore rows with non-numeric or malformed balances
-                pass
-
-        # Use the imported utility to format the output string
-        formatted_total = format_currency_output(total_balance, 0) # 0 decimal places
-
-        return f"Total Portfolio Balance: {formatted_total}"
- 
-    # ----------------------------------------------------------------------
-    # 9. Get current portfolio XML file name for save-to function default
-    # ----------------------------------------------------------------------
-    @app.callback(
-        Output('save-filename-input', 'value'),
-        Input('upload-data', 'filename'),
-        prevent_initial_call=True
-    )
-    def update_save_filename_on_load(filename):
-        """When user loads an XML, pre-fill the save filename box with the same name"""
-        if filename:
-            return filename
-    return "my_retirement_portfolio.xml"
-
-    # ----------------------------------------------------------------------
-    # 10. Delete portfolio row
-    # ----------------------------------------------------------------------
-    @app.callback(
-        Output('portfolio-grid', 'rowData', allow_duplicate=True),
-        Input('delete-selected-btn', 'n_clicks'),
-        State('portfolio-grid', 'selectedRows'),
-        State('portfolio-grid', 'rowData'),
-        prevent_initial_call=True
-    )
-    def delete_selected_rows(n_clicks, selected_rows, current_rows):
-        if not n_clicks or not selected_rows:
-            raise PreventUpdate
-
-        # Use 'name' as unique key (assuming names are unique)
-        selected_names = [row['name'] for row in selected_rows]
-        rows_to_keep = [row for row in current_rows if row['name'] not in selected_names]
-
-        return rows_to_keep

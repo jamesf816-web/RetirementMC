@@ -1,0 +1,47 @@
+<expenses>
+    <expense name="Base Expenses">
+        <cost>11735</cost>
+        <type>regular</type>
+        <period>1</period>
+	<inflate>Yes</inflate>
+    </expense>
+
+    <expense name="Mortgage">
+        <cost>3756.47</cost>
+        <type>regular</type>
+        <period>1</period>
+        <last_year>2031</last_year>
+        <last_month>2031</last_month>
+	<inflate>Yes</inflate>
+    </expense>
+
+    <expense name="Property Tax">
+        <cost>3421.00</cost>
+        <type>regular</type>
+        <period>6</period>
+	<inflate>No</inflate>
+    </expense>
+
+    <expense name="Home Owners Insurance">
+        <cost>2400.00</cost>
+        <type>regular</type>
+        <period>6</period>
+	<inflate>Yes</inflate>
+    </expense>
+
+    <expense name="Car Purchase">
+        <cost>50000</cost>
+        <type>periodic</type>
+        <period>48</period>
+	<inflate>Yes</inflate>
+    </expense>
+
+    <expense name="Home Repaurs">
+        <cost>28000</cost>
+        <type>stoichastic</type>
+        <prob>0.12</prob>
+        <shape>2.0</shape>
+	<inflate>Yes</inflate>
+    </expense>
+
+</expenses>

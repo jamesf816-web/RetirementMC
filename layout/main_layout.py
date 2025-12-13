@@ -8,16 +8,18 @@ import dash_ag_grid as dag
 import plotly.graph_objects as go
 import numpy as np
 
-from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS
+from utils.xml_loader import DEFAULT_SETUP, DEFAULT_ACCOUNTS, DEFAULT_EXPENSES
 from utils.currency import pretty_currency_input, pretty_year_input, pretty_percent_input
 
 from layout.results_layout import create_results_layout
 
 from callbacks.editor_callbacks import format_currency_output
 
-# Calculate the initial total balance from the default data
+# Calculate the initial total portfolio balance and expenses costs from the default data
 INITIAL_TOTAL_BALANCE = sum(v.get('balance', 0) for v in DEFAULT_ACCOUNTS.values())
 INITIAL_TOTAL_BALANCE_STR = format_currency_output(INITIAL_TOTAL_BALANCE)
+INITIAL_TOTAL_EXPENSES = sum(v.get('cost', 0) for v in DEFAULT_EXPENSES.values())
+INITIAL_TOTAL_EXPENSES_STR = format_currency_output(INITIAL_TOTAL_EXPENSES)
 
 # ----------------------------------------------------------------------
 # Application Layout Definition
@@ -39,7 +41,7 @@ main_layout = html.Div(
         dcc.Store(id="simulation-data-store"),
 
         # ----------------------------------------------------------------------
-        # ROW 1: Simulation Controls - Portfolio Editor, Slider and Run Button
+        # ROW 1: Simulation Controls - Portfolio Editor, Expense Editor, Slider and Run Button
         # ----------------------------------------------------------------------
         html.Div([        
             # COLUMN 1A: Collapsible Portfolio Editor Button
@@ -62,8 +64,28 @@ main_layout = html.Div(
                     'alignSelf': 'flex-end',
                 }
             ),
+            # COLUMN 1B: Collapsible Expenses Editor Button
+            html.Button(
+                "Expenses Editor – Click to Open",
+                id="expenses-collapse-button",
+                n_clicks=0,
+                style={
+                    'padding': '12px 20px',
+                    'fontSize': '16px',
+                    'fontWeight': 'bold',
+                    'backgroundColor': 'purple',
+                    'color': 'white',
+                    'border': 'none',
+                    'borderRadius': '8px',
+                    'cursor': 'pointer',
+                    'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
+                    'whiteSpace': 'nowrap',
+                    'height': '50px',
+                    'alignSelf': 'flex-end',
+                }
+            ),
          
-            # COLUMN 1B: Slider (takes up most of the space)
+            # COLUMN 1C: Slider (takes up most of the space)
             html.Div([
                 html.Label("Number of Simulations", style={'fontSize': 16, 'fontWeight': 'bold'}),
                 dcc.Slider(
@@ -74,7 +96,7 @@ main_layout = html.Div(
             ], style={'flex': 1, 'minWidth': '300px', 'padding': '0 20px'}
             ), 
 
-            # COLUMN 1C: Run Button 
+            # COLUMN 1D: Run Button 
             html.Button(
                 "Run Simulation",
                 id="run",
@@ -249,6 +271,173 @@ main_layout = html.Div(
 
                             ],
                             rowData=[{**v, "name": k, "delete": False} for k, v in DEFAULT_ACCOUNTS.items()],
+                            defaultColDef={
+                                "flex": 1,
+                                "minWidth": 100,
+                                "resizable": True,
+                                "sortable": True,
+                                "filter": True,
+                                "floatingFilter": True
+                            },
+                            dashGridOptions={"rowHeight": 48, "animateRows": False, "onCellValueChanged": {"function": "console.log('changed')"}},
+                            style={"height": 550, "minWidth": 1200},
+                            className="ag-theme-alpine",
+                            
+                        )
+                    ] 
+                )
+            ]
+        ),
+
+        # ----------------------------------------------------------------------
+        # ROW 1 - COLLAPSIBLE EXPENSES EDITOR FULL WIDTH WHEN OPEN
+        # ----------------------------------------------------------------------
+        dcc.Download(id="download-xml-expenses"),
+
+        html.Div(
+            id="expenses-collapse-content",
+            style={'display': 'none'},
+            children=[
+                # Outer Div to apply styling (border, background, padding) to the entire editor content
+                html.Div(
+                    style={
+                        'padding': '25px',
+                        'border': '2px solid #ddd',
+                        'borderRadius': '12px',
+                        'backgroundColor': '#fff',
+                        'boxShadow': '0 8px 25px rgba(0,0,0,0.1)',
+                        'marginBottom': '30px'
+                    },
+                    children=[
+                        # Div for the buttons row (1. File/2. Save/3. Add/4. Reset/5. Status)
+                        html.Div([
+                            # 1. Choose XML File (dcc.Upload with inline button)
+                            dcc.Upload(
+                                id='upload-data',
+                                children=html.Button(
+                                    "Choose XML File",
+                                    style={
+                                        'marginRight': '10px',
+                                        'backgroundColor': '#f39c12', # Orange for file selection
+                                        'color': 'white',
+                                        'border': 'none',
+                                        'padding': '10px 20px',
+                                        'borderRadius': '4px',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                                multiple=False,
+                                accept=".xml",
+                                style={'display': 'inline-block', 'marginRight': '10px'}
+                            ),
+
+                            # 2. Save to XML Button
+                            html.Button(
+                                "Save Expenses to XML",
+                                id="save-expenses-btn",
+                                n_clicks=0,
+                                style={
+                                    'marginRight': '30px', # Add extra space after Save button
+                                    'backgroundColor': '#2ecc71', # Green for saving
+                                    'color': 'white',
+                                    'border': 'none',
+                                    'padding': '10px 20px',
+                                    'borderRadius': '4px',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+
+                           # 2b. Save-As functionality
+                            html.Span("Save as: ", style={'margin': '0 10px', 'fontWeight': 'bold'}),
+                            dcc.Input(
+                                id='save-filename-input',
+                                type='text',
+                                placeholder='default_expenses.xml',
+                                value='default_expenses.xml',  # Will be filled automatically if a new file is uploaded
+                                style={
+                                    'width': '200px',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc',
+                                    'fontSize': '14px',
+                                    'marginRight': '20px'
+                                }
+                            ),
+
+                            # 3. Add New Expenses
+                            html.Button("Add New Expense", id="add-expenses-btn", n_clicks=0,
+                                         style={'marginRight': '10px', 'backgroundColor': '#27ae60', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+                            
+                            # 4. Reset to Defaults
+                            html.Button("Reset to Defaults", id="reset-expenses-btn", n_clicks=0,
+                                         style={'backgroundColor': 'blue', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+
+                            # 5. Total Expenses Display
+                            html.Div(
+                                id="total-annual-expenses",
+                                children=f"Total Annual Expenses: {INITIAL_TOTAL_EXPENSES_STR}",
+                                style={
+                                    'marginLeft': 'auto',
+                                    'marginRight': '30px',
+                                    'fontWeight': 'bold',
+                                    'fontSize': '20px',
+                                    'color': '#34495e',
+                                    'minWidth': '250px', 
+                                    'textAlign': 'right'
+                                }
+                            ),
+
+                            # 6. Expenses Status Div
+                            html.Div(id="expenses-status", style={'display': 'inline-block', 'marginLeft': '20px', 'color': '#7f8c8d', 'fontSize': '14px'}),
+
+                            # 7. Delete Expenses
+                            html.Button("Delete Expenses", id="delete-selected-btn", n_clicks=0,
+                                        style={'backgroundColor': 'red', 'color': 'white', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '4px'}),
+                                 
+                        ], style={'marginBottom': '15px', 'display': 'flex', 'alignItems': 'center'}),
+
+
+                        # dag.AgGrid for Expenses Editor
+                        dag.AgGrid(
+                            id='expenses-grid',
+                            columnDefs=[
+                                {"field": "name", "headerName": "Expense Name", "editable": True, "pinned": "left", "width": 180},
+                                {"field": "cost", "headerName": "Cost ($)", "type": "rightAligned",
+                                 "valueFormatter": {"function": "params.value == null ? '' : '$' + Number(params.value).toLocaleString()"},
+                                 "editable": True},
+                                {"field": "type", "headerName": "Expense Type", "cellEditor": "agSelectCellEditor",
+                                 "cellEditorParams": {"values": ["regular", "periodic", "stoicastic"]}, "width": 80,
+                                 "editable": True},                          
+                                {"field": "period", "headerName": "Period",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value).toFixed(0) + 'months'"},
+                                 "editable": True},                                
+                                {"field": "prob", "headerName": "Probability %",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value*100).toFixed(1) + '%'"},
+                                 "editable": True},                                
+                                {"field": "shape", "headerName": "Shape",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value).toFixed(1)"},
+                                 "editable": True},                        
+                                {"field": "last_year", "headerName": "Last Year",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value).toFixed(0)"},
+                                 "editable": True},                        
+                                {"field": "last_month", "headerName": "Last Month",
+                                 "valueFormatter": {"function": "params.value == null ? '' : (params.value).toFixed(0)"},
+                                 "editable": True},                        
+                                {"field": "inflate", "headerName": "Apply Inflation", "cellEditor": "agSelectCellEditor",
+                                 "cellEditorParams": {"values": ["Yes", "No"]}, "width": 50,
+                                 "editable": True},                        
+                                {
+                                    "headerName": "Select to Delete",
+                                    "checkboxSelection": True,
+                                    "headerCheckboxSelection": True,
+                                    "width": 70,
+                                    "pinned": "right",
+                                    "sortable": False,
+                                    "filter": False
+                                },                              
+
+                            ],
+                            rowData=[{**v, "name": k, "delete": False} for k, v in DEFAULT_EXPENSES.items()],
                             defaultColDef={
                                 "flex": 1,
                                 "minWidth": 100,
